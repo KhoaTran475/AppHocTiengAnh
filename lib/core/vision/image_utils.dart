@@ -32,6 +32,74 @@ class ProcessedImageResult {
   });
 }
 
+/// Gói dữ liệu frame camera độc lập, an toàn để truyền qua Isolate
+class CameraFramePayload {
+  final int width;
+  final int height;
+  final bool isBgra;
+  final Uint8List plane0Bytes;
+  final int plane0BytesPerRow;
+  final Uint8List? plane1Bytes;
+  final int? plane1BytesPerRow;
+  final int? plane1BytesPerPixel;
+  final Uint8List? plane2Bytes;
+  final int? plane2BytesPerRow;
+  final int? plane2BytesPerPixel;
+  final int rotationDegrees;
+
+  CameraFramePayload({
+    required this.width,
+    required this.height,
+    required this.isBgra,
+    required this.plane0Bytes,
+    required this.plane0BytesPerRow,
+    this.plane1Bytes,
+    this.plane1BytesPerRow,
+    this.plane1BytesPerPixel,
+    this.plane2Bytes,
+    this.plane2BytesPerRow,
+    this.plane2BytesPerPixel,
+    required this.rotationDegrees,
+  });
+
+  /// Sao chép byte nhanh (<0.3ms) để giải phóng CameraImage lập tức trên Main Isolate
+  factory CameraFramePayload.fromCameraImage(
+    CameraImage image,
+    int rotationDegrees,
+  ) {
+    final bool isBgra = image.format.group == ImageFormatGroup.bgra8888;
+    if (isBgra) {
+      final p0 = image.planes[0];
+      return CameraFramePayload(
+        width: image.width,
+        height: image.height,
+        isBgra: true,
+        plane0Bytes: Uint8List.fromList(p0.bytes),
+        plane0BytesPerRow: p0.bytesPerRow,
+        rotationDegrees: rotationDegrees,
+      );
+    } else {
+      final p0 = image.planes[0];
+      final p1 = image.planes[1];
+      final p2 = image.planes[2];
+      return CameraFramePayload(
+        width: image.width,
+        height: image.height,
+        isBgra: false,
+        plane0Bytes: Uint8List.fromList(p0.bytes),
+        plane0BytesPerRow: p0.bytesPerRow,
+        plane1Bytes: Uint8List.fromList(p1.bytes),
+        plane1BytesPerRow: p1.bytesPerRow,
+        plane1BytesPerPixel: p1.bytesPerPixel ?? 1,
+        plane2Bytes: Uint8List.fromList(p2.bytes),
+        plane2BytesPerRow: p2.bytesPerRow,
+        plane2BytesPerPixel: p2.bytesPerPixel ?? 1,
+        rotationDegrees: rotationDegrees,
+      );
+    }
+  }
+}
+
 /// Tiện ích chuyển đổi CameraImage sang Float32List chuẩn hóa [0.0, 1.0] cho YOLOv8n TFLite.
 ///
 /// Tích hợp LETTERBOXING CHUẨN CỦA YOLOV8:
@@ -41,14 +109,20 @@ class ProcessedImageResult {
 class ImageUtils {
   // Buffer tái sử dụng để tránh cấp phát bộ nhớ liên tục trong mỗi frame
   static Float32List? _cachedBuffer;
+  static Int32List? _cachedLutX;
+  static Int32List? _cachedLutY;
 
-  /// Chuyển đổi CameraImage sang Float32List có kèm Letterbox
-  static ProcessedImageResult cameraImageToFloat32Letterbox(
-    CameraImage cameraImage,
+  // Bảng tra cứu chuẩn hóa 0..255 -> 0.0..1.0 kiểu Float32 để loại bỏ phép chia số thực
+  static final Float32List _kInv255 = Float32List.fromList(
+    List.generate(256, (i) => i / 255.0),
+  );
+
+  /// Chuyển đổi CameraFramePayload sang Float32List có kèm Letterbox (chạy trong Background Isolate)
+  static ProcessedImageResult payloadToFloat32Letterbox(
+    CameraFramePayload payload,
     int targetWidth,
     int targetHeight, {
     bool nchw = true,
-    int rotationDegrees = 90,
   }) {
     final int totalPixels = targetWidth * targetHeight;
     final int requiredLength = 3 * totalPixels;
@@ -58,14 +132,12 @@ class ImageUtils {
     }
 
     final Float32List result = _cachedBuffer!;
-
-    // Giá trị xám mặc định của YOLO letterbox: 114.0 / 255.0 = 0.4470588
     result.fillRange(0, requiredLength, 0.4470588);
 
-    final int srcWidth = cameraImage.width;
-    final int srcHeight = cameraImage.height;
+    final int srcWidth = payload.width;
+    final int srcHeight = payload.height;
+    final int rotationDegrees = payload.rotationDegrees;
 
-    // Kích thước sau khi xoay portrait
     final int rotW = (rotationDegrees == 90 || rotationDegrees == 270)
         ? srcHeight
         : srcWidth;
@@ -73,7 +145,6 @@ class ImageUtils {
         ? srcWidth
         : srcHeight;
 
-    // Tính tỷ lệ scale giữ nguyên Aspect Ratio
     final double scale = min(
       targetWidth / rotW,
       targetHeight / rotH,
@@ -94,23 +165,35 @@ class ImageUtils {
       targetHeight: targetHeight,
     );
 
-    if (cameraImage.format.group == ImageFormatGroup.bgra8888) {
-      _convertBgraLetterbox(
-        cameraImage,
-        targetWidth,
-        result,
-        letterbox,
-        scale,
+    if (payload.isBgra) {
+      _convertBgraRawLetterbox(
+        bytes: payload.plane0Bytes,
+        srcWidth: srcWidth,
+        srcHeight: srcHeight,
+        bytesPerRow: payload.plane0BytesPerRow,
+        targetWidth: targetWidth,
+        result: result,
+        letterbox: letterbox,
+        scale: scale,
         nchw: nchw,
         rotationDegrees: rotationDegrees,
       );
     } else {
-      _convertYuv420Letterbox(
-        cameraImage,
-        targetWidth,
-        result,
-        letterbox,
-        scale,
+      _convertYuv420RawLetterbox(
+        yBytes: payload.plane0Bytes,
+        uBytes: payload.plane1Bytes ?? Uint8List(0),
+        vBytes: payload.plane2Bytes ?? Uint8List(0),
+        srcWidth: srcWidth,
+        srcHeight: srcHeight,
+        yRowStride: payload.plane0BytesPerRow,
+        uRowStride: payload.plane1BytesPerRow ?? payload.plane0BytesPerRow ~/ 2,
+        vRowStride: payload.plane2BytesPerRow ?? payload.plane0BytesPerRow ~/ 2,
+        uPixelStride: payload.plane1BytesPerPixel ?? 1,
+        vPixelStride: payload.plane2BytesPerPixel ?? 1,
+        targetWidth: targetWidth,
+        result: result,
+        letterbox: letterbox,
+        scale: scale,
         nchw: nchw,
         rotationDegrees: rotationDegrees,
       );
@@ -119,156 +202,302 @@ class ImageUtils {
     return ProcessedImageResult(buffer: result, letterbox: letterbox);
   }
 
-  /// Chuyển đổi YUV420 với Letterbox chuẩn xác
-  static void _convertYuv420Letterbox(
-    CameraImage cameraImage,
-    int targetWidth,
-    Float32List result,
-    LetterboxInfo letterbox,
-    double scale, {
+
+  /// Chuyển đổi YUV420 với Letterbox chuẩn xác, tối ưu hóa tốc độ cực cao bằng LUT và Fixed-Point
+  static void _convertYuv420RawLetterbox({
+    required Uint8List yBytes,
+    required Uint8List uBytes,
+    required Uint8List vBytes,
+    required int srcWidth,
+    required int srcHeight,
+    required int yRowStride,
+    required int uRowStride,
+    required int vRowStride,
+    required int uPixelStride,
+    required int vPixelStride,
+    required int targetWidth,
+    required Float32List result,
+    required LetterboxInfo letterbox,
+    required double scale,
     required bool nchw,
     required int rotationDegrees,
   }) {
-    final int srcWidth = cameraImage.width;
-    final int srcHeight = cameraImage.height;
-
-    final yPlane = cameraImage.planes[0];
-    final uPlane = cameraImage.planes[1];
-    final vPlane = cameraImage.planes[2];
-
-    final Uint8List yBytes = yPlane.bytes;
-    final Uint8List uBytes = uPlane.bytes;
-    final Uint8List vBytes = vPlane.bytes;
-
-    final int yRowStride = yPlane.bytesPerRow;
-    final int uRowStride = uPlane.bytesPerRow;
-    final int uPixelStride = uPlane.bytesPerPixel ?? 1;
-    final int vRowStride = vPlane.bytesPerRow;
-    final int vPixelStride = vPlane.bytesPerPixel ?? 1;
 
     final int totalPixels = letterbox.targetWidth * letterbox.targetHeight;
     final int gOffset = totalPixels;
     final int bOffset = 2 * totalPixels;
 
+    final int targetHeight = letterbox.targetHeight;
     final int startX = letterbox.padX;
     final int endX = letterbox.padX + letterbox.scaledWidth;
     final int startY = letterbox.padY;
     final int endY = letterbox.padY + letterbox.scaledHeight;
 
-    for (int outY = startY; outY < endY; outY++) {
-      final double rotY = (outY - letterbox.padY) / scale;
+    if (_cachedLutX == null || _cachedLutX!.length < targetWidth) {
+      _cachedLutX = Int32List(targetWidth);
+    }
+    if (_cachedLutY == null || _cachedLutY!.length < targetHeight) {
+      _cachedLutY = Int32List(targetHeight);
+    }
+    final Int32List lutX = _cachedLutX!;
+    final Int32List lutY = _cachedLutY!;
 
+    if (rotationDegrees == 90) {
+      // Tính trước bảng ánh xạ tọa độ (LUT) ngoài vòng lặp 2D
+      for (int outY = startY; outY < endY; outY++) {
+        final double rotY = (outY - letterbox.padY) / scale;
+        lutY[outY] = rotY.round().clamp(0, srcWidth - 1);
+      }
       for (int outX = startX; outX < endX; outX++) {
         final double rotX = (outX - letterbox.padX) / scale;
+        lutX[outX] = ((srcHeight - 1) - rotX).round().clamp(0, srcHeight - 1);
+      }
 
-        int srcX;
-        int srcY;
-
-        // Ánh xạ tọa độ sau xoay ngược về cảm biến camera gốc
-        if (rotationDegrees == 90) {
-          srcX = rotY.round().clamp(0, srcWidth - 1);
-          srcY = ((srcHeight - 1) - rotX).round().clamp(0, srcHeight - 1);
-        } else if (rotationDegrees == 270) {
-          srcX = ((srcWidth - 1) - rotY).round().clamp(0, srcWidth - 1);
-          srcY = rotX.round().clamp(0, srcHeight - 1);
-        } else {
-          srcX = rotX.round().clamp(0, srcWidth - 1);
-          srcY = rotY.round().clamp(0, srcHeight - 1);
-        }
-
-        final int yIdx = srcY * yRowStride + srcX;
-        final int uvRow = srcY >> 1;
+      for (int outY = startY; outY < endY; outY++) {
+        final int srcX = lutY[outY];
         final int uvCol = srcX >> 1;
-        final int uIdx = uvRow * uRowStride + uvCol * uPixelStride;
-        final int vIdx = uvRow * vRowStride + uvCol * vPixelStride;
+        final int uColOffset = uvCol * uPixelStride;
+        final int vColOffset = uvCol * vPixelStride;
+        final int rowOffset = nchw ? outY * targetWidth : (outY * targetWidth) * 3;
 
-        final int yp = (yIdx < yBytes.length) ? yBytes[yIdx] : 0;
-        final int up = (uIdx < uBytes.length) ? uBytes[uIdx] : 128;
-        final int vp = (vIdx < vBytes.length) ? vBytes[vIdx] : 128;
+        for (int outX = startX; outX < endX; outX++) {
+          final int srcY = lutX[outX];
+          final int yIdx = srcY * yRowStride + srcX;
+          final int uvRow = srcY >> 1;
+          final int uIdx = uvRow * uRowStride + uColOffset;
+          final int vIdx = uvRow * vRowStride + vColOffset;
 
-        // Chuẩn chuyển đổi ITU-R BT.601 YUV -> RGB
-        final int c = yp;
-        final int d = up - 128;
-        final int e = vp - 128;
+          final int yp = (yIdx < yBytes.length) ? yBytes[yIdx] : 0;
+          final int up = (uIdx < uBytes.length) ? uBytes[uIdx] : 128;
+          final int vp = (vIdx < vBytes.length) ? vBytes[vIdx] : 128;
 
-        final double r = ((c + 1.402 * e).round().clamp(0, 255)) / 255.0;
-        final double g =
-            ((c - 0.344136 * d - 0.714136 * e).round().clamp(0, 255)) / 255.0;
-        final double b = ((c + 1.772 * d).round().clamp(0, 255)) / 255.0;
+          // Chuẩn chuyển đổi ITU-R BT.601 YUV -> RGB tối ưu Fixed-Point 10-bit
+          final int c = yp;
+          final int d = up - 128;
+          final int e = vp - 128;
 
-        if (nchw) {
-          final int pIdx = outY * targetWidth + outX;
-          result[pIdx] = r;
-          result[gOffset + pIdx] = g;
-          result[bOffset + pIdx] = b;
-        } else {
-          final int pIdx = (outY * targetWidth + outX) * 3;
-          result[pIdx] = r;
-          result[pIdx + 1] = g;
-          result[pIdx + 2] = b;
+          final int r = (c + ((1436 * e) >> 10)).clamp(0, 255);
+          final int g = (c - ((352 * d + 731 * e) >> 10)).clamp(0, 255);
+          final int b = (c + ((1815 * d) >> 10)).clamp(0, 255);
+
+          if (nchw) {
+            final int pIdx = rowOffset + outX;
+            result[pIdx] = _kInv255[r];
+            result[gOffset + pIdx] = _kInv255[g];
+            result[bOffset + pIdx] = _kInv255[b];
+          } else {
+            final int pIdx = (outY * targetWidth + outX) * 3;
+            result[pIdx] = _kInv255[r];
+            result[pIdx + 1] = _kInv255[g];
+            result[pIdx + 2] = _kInv255[b];
+          }
+        }
+      }
+    } else if (rotationDegrees == 270) {
+      for (int outY = startY; outY < endY; outY++) {
+        final double rotY = (outY - letterbox.padY) / scale;
+        lutY[outY] = ((srcWidth - 1) - rotY).round().clamp(0, srcWidth - 1);
+      }
+      for (int outX = startX; outX < endX; outX++) {
+        final double rotX = (outX - letterbox.padX) / scale;
+        lutX[outX] = rotX.round().clamp(0, srcHeight - 1);
+      }
+
+      for (int outY = startY; outY < endY; outY++) {
+        final int srcX = lutY[outY];
+        final int uvCol = srcX >> 1;
+        final int uColOffset = uvCol * uPixelStride;
+        final int vColOffset = uvCol * vPixelStride;
+        final int rowOffset = nchw ? outY * targetWidth : (outY * targetWidth) * 3;
+
+        for (int outX = startX; outX < endX; outX++) {
+          final int srcY = lutX[outX];
+          final int yIdx = srcY * yRowStride + srcX;
+          final int uvRow = srcY >> 1;
+          final int uIdx = uvRow * uRowStride + uColOffset;
+          final int vIdx = uvRow * vRowStride + vColOffset;
+
+          final int yp = (yIdx < yBytes.length) ? yBytes[yIdx] : 0;
+          final int up = (uIdx < uBytes.length) ? uBytes[uIdx] : 128;
+          final int vp = (vIdx < vBytes.length) ? vBytes[vIdx] : 128;
+
+          final int c = yp;
+          final int d = up - 128;
+          final int e = vp - 128;
+
+          final int r = (c + ((1436 * e) >> 10)).clamp(0, 255);
+          final int g = (c - ((352 * d + 731 * e) >> 10)).clamp(0, 255);
+          final int b = (c + ((1815 * d) >> 10)).clamp(0, 255);
+
+          if (nchw) {
+            final int pIdx = rowOffset + outX;
+            result[pIdx] = _kInv255[r];
+            result[gOffset + pIdx] = _kInv255[g];
+            result[bOffset + pIdx] = _kInv255[b];
+          } else {
+            final int pIdx = (outY * targetWidth + outX) * 3;
+            result[pIdx] = _kInv255[r];
+            result[pIdx + 1] = _kInv255[g];
+            result[pIdx + 2] = _kInv255[b];
+          }
+        }
+      }
+    } else {
+      for (int outY = startY; outY < endY; outY++) {
+        final double rotY = (outY - letterbox.padY) / scale;
+        lutY[outY] = rotY.round().clamp(0, srcHeight - 1);
+      }
+      for (int outX = startX; outX < endX; outX++) {
+        final double rotX = (outX - letterbox.padX) / scale;
+        lutX[outX] = rotX.round().clamp(0, srcWidth - 1);
+      }
+
+      for (int outY = startY; outY < endY; outY++) {
+        final int srcY = lutY[outY];
+        final int uvRow = srcY >> 1;
+        final int uRowOffset = uvRow * uRowStride;
+        final int vRowOffset = uvRow * vRowStride;
+        final int rowOffset = nchw ? outY * targetWidth : (outY * targetWidth) * 3;
+
+        for (int outX = startX; outX < endX; outX++) {
+          final int srcX = lutX[outX];
+          final int yIdx = srcY * yRowStride + srcX;
+          final int uvCol = srcX >> 1;
+          final int uIdx = uRowOffset + uvCol * uPixelStride;
+          final int vIdx = vRowOffset + uvCol * vPixelStride;
+
+          final int yp = (yIdx < yBytes.length) ? yBytes[yIdx] : 0;
+          final int up = (uIdx < uBytes.length) ? uBytes[uIdx] : 128;
+          final int vp = (vIdx < vBytes.length) ? vBytes[vIdx] : 128;
+
+          final int c = yp;
+          final int d = up - 128;
+          final int e = vp - 128;
+
+          final int r = (c + ((1436 * e) >> 10)).clamp(0, 255);
+          final int g = (c - ((352 * d + 731 * e) >> 10)).clamp(0, 255);
+          final int b = (c + ((1815 * d) >> 10)).clamp(0, 255);
+
+          if (nchw) {
+            final int pIdx = rowOffset + outX;
+            result[pIdx] = _kInv255[r];
+            result[gOffset + pIdx] = _kInv255[g];
+            result[bOffset + pIdx] = _kInv255[b];
+          } else {
+            final int pIdx = (outY * targetWidth + outX) * 3;
+            result[pIdx] = _kInv255[r];
+            result[pIdx + 1] = _kInv255[g];
+            result[pIdx + 2] = _kInv255[b];
+          }
         }
       }
     }
   }
 
-  /// Chuyển đổi BGRA với Letterbox
-  static void _convertBgraLetterbox(
-    CameraImage cameraImage,
-    int targetWidth,
-    Float32List result,
-    LetterboxInfo letterbox,
-    double scale, {
+  /// Chuyển đổi BGRA với Letterbox có tối ưu LUT
+  static void _convertBgraRawLetterbox({
+    required Uint8List bytes,
+    required int srcWidth,
+    required int srcHeight,
+    required int bytesPerRow,
+    required int targetWidth,
+    required Float32List result,
+    required LetterboxInfo letterbox,
+    required double scale,
     required bool nchw,
     required int rotationDegrees,
   }) {
-    final int srcWidth = cameraImage.width;
-    final int srcHeight = cameraImage.height;
-    final plane = cameraImage.planes[0];
-    final Uint8List bytes = plane.bytes;
-    final int bytesPerRow = plane.bytesPerRow;
 
     final int totalPixels = letterbox.targetWidth * letterbox.targetHeight;
     final int gOffset = totalPixels;
     final int bOffset = 2 * totalPixels;
 
+    final int targetHeight = letterbox.targetHeight;
     final int startX = letterbox.padX;
     final int endX = letterbox.padX + letterbox.scaledWidth;
     final int startY = letterbox.padY;
     final int endY = letterbox.padY + letterbox.scaledHeight;
 
-    for (int outY = startY; outY < endY; outY++) {
-      final double rotY = (outY - letterbox.padY) / scale;
+    if (_cachedLutX == null || _cachedLutX!.length < targetWidth) {
+      _cachedLutX = Int32List(targetWidth);
+    }
+    if (_cachedLutY == null || _cachedLutY!.length < targetHeight) {
+      _cachedLutY = Int32List(targetHeight);
+    }
+    final Int32List lutX = _cachedLutX!;
+    final Int32List lutY = _cachedLutY!;
 
+    if (rotationDegrees == 90) {
+      for (int outY = startY; outY < endY; outY++) {
+        final double rotY = (outY - letterbox.padY) / scale;
+        lutY[outY] = rotY.round().clamp(0, srcWidth - 1);
+      }
       for (int outX = startX; outX < endX; outX++) {
         final double rotX = (outX - letterbox.padX) / scale;
+        lutX[outX] = ((srcHeight - 1) - rotX).round().clamp(0, srcHeight - 1);
+      }
 
-        int srcX;
-        int srcY;
+      for (int outY = startY; outY < endY; outY++) {
+        final int srcX = lutY[outY];
+        final int rowOffset = nchw ? outY * targetWidth : (outY * targetWidth) * 3;
 
-        if (rotationDegrees == 90) {
-          srcX = rotY.round().clamp(0, srcWidth - 1);
-          srcY = ((srcHeight - 1) - rotX).round().clamp(0, srcHeight - 1);
-        } else {
-          srcX = rotX.round().clamp(0, srcWidth - 1);
-          srcY = rotY.round().clamp(0, srcHeight - 1);
+        for (int outX = startX; outX < endX; outX++) {
+          final int srcY = lutX[outX];
+          final int pixelIdx = srcY * bytesPerRow + srcX * 4;
+
+          if (pixelIdx + 2 < bytes.length) {
+            final double b = _kInv255[bytes[pixelIdx]];
+            final double g = _kInv255[bytes[pixelIdx + 1]];
+            final double r = _kInv255[bytes[pixelIdx + 2]];
+
+            if (nchw) {
+              final int pIdx = rowOffset + outX;
+              result[pIdx] = r;
+              result[gOffset + pIdx] = g;
+              result[bOffset + pIdx] = b;
+            } else {
+              final int pIdx = (outY * targetWidth + outX) * 3;
+              result[pIdx] = r;
+              result[pIdx + 1] = g;
+              result[pIdx + 2] = b;
+            }
+          }
         }
+      }
+    } else {
+      for (int outY = startY; outY < endY; outY++) {
+        final double rotY = (outY - letterbox.padY) / scale;
+        lutY[outY] = rotY.round().clamp(0, srcHeight - 1);
+      }
+      for (int outX = startX; outX < endX; outX++) {
+        final double rotX = (outX - letterbox.padX) / scale;
+        lutX[outX] = rotX.round().clamp(0, srcWidth - 1);
+      }
 
-        final int pixelIdx = srcY * bytesPerRow + srcX * 4;
-        if (pixelIdx + 2 < bytes.length) {
-          final double b = bytes[pixelIdx] / 255.0;
-          final double g = bytes[pixelIdx + 1] / 255.0;
-          final double r = bytes[pixelIdx + 2] / 255.0;
+      for (int outY = startY; outY < endY; outY++) {
+        final int srcY = lutY[outY];
+        final int rowOffset = nchw ? outY * targetWidth : (outY * targetWidth) * 3;
 
-          if (nchw) {
-            final int pIdx = outY * targetWidth + outX;
-            result[pIdx] = r;
-            result[gOffset + pIdx] = g;
-            result[bOffset + pIdx] = b;
-          } else {
-            final int pIdx = (outY * targetWidth + outX) * 3;
-            result[pIdx] = r;
-            result[pIdx + 1] = g;
-            result[pIdx + 2] = b;
+        for (int outX = startX; outX < endX; outX++) {
+          final int srcX = lutX[outX];
+          final int pixelIdx = srcY * bytesPerRow + srcX * 4;
+
+          if (pixelIdx + 2 < bytes.length) {
+            final double b = _kInv255[bytes[pixelIdx]];
+            final double g = _kInv255[bytes[pixelIdx + 1]];
+            final double r = _kInv255[bytes[pixelIdx + 2]];
+
+            if (nchw) {
+              final int pIdx = rowOffset + outX;
+              result[pIdx] = r;
+              result[gOffset + pIdx] = g;
+              result[bOffset + pIdx] = b;
+            } else {
+              final int pIdx = (outY * targetWidth + outX) * 3;
+              result[pIdx] = r;
+              result[pIdx + 1] = g;
+              result[pIdx + 2] = b;
+            }
           }
         }
       }

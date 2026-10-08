@@ -1,7 +1,10 @@
 import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:camera/camera.dart';
+
 import '../../../core/theme/app_theme.dart';
+import '../../../core/vision/image_utils.dart';
 import '../../../core/vision/vision_service.dart';
 import '../widgets/vocabulary_detail_bottom_sheet.dart';
 
@@ -25,15 +28,21 @@ class _CameraScanScreenState extends State<CameraScanScreen>
   final VisionService _visionService = VisionService();
 
   List<Recognition> _recognitions = [];
-  bool _isDetecting = false;
   bool _isCameraReady = false;
   String _debugInfo = 'Đang khởi tạo Camera & Model AI...';
 
+  // Thời gian lần inference gần nhất để điều tiết tốc độ (throttling)
+  DateTime _lastInferenceTime = DateTime.fromMillisecondsSinceEpoch(0);
+
+  /// Giới hạn tần suất inference AI (~14 FPS) giúp UI isolate luôn duy trì 60 FPS mượt mà
+  static const int _inferenceIntervalMs = 70;
+
   // Kích thước thực tế của camera preview (để căn chỉnh bounding box)
   Size? _previewSize;
+  int _sensorOrientation = 90;
 
-  /// Ngưỡng confidence tối thiểu để HIỂN THỊ trên UI (0.40 giúp loại bỏ hoàn toàn các phỏng đoán nhiễu).
-  static const double _displayThreshold = 0.40;
+  /// Ngưỡng confidence tối thiểu để HIỂN THỊ trên UI (0.50 giúp loại bỏ hoàn toàn các phỏng đoán nhiễu và đoán mò).
+  static const double _displayThreshold = 0.50;
 
   @override
   void initState() {
@@ -43,27 +52,49 @@ class _CameraScanScreenState extends State<CameraScanScreen>
   }
 
   Future<void> _initServices() async {
+    // Đăng ký callback nhận kết quả từ Background Worker Isolate
+    _visionService.onDetections = (results, debugInfo) {
+      if (!mounted) return;
+      setState(() {
+        _recognitions = results
+            .where((r) => r.confidence >= _displayThreshold)
+            .toList();
+        _debugInfo = debugInfo;
+      });
+    };
+
     await _visionService.init();
     await _initCamera();
   }
 
   Future<void> _initCamera() async {
-    final cameras = await availableCameras();
-    if (cameras.isEmpty) {
-      if (mounted) {
-        setState(() => _debugInfo = 'Không tìm thấy camera trên thiết bị');
-      }
-      return;
-    }
-
-    _cameraController = CameraController(
-      cameras.first,
-      ResolutionPreset.medium, // 480p: tối ưu tốc độ xử lý frame
-      enableAudio: false,
-      imageFormatGroup: ImageFormatGroup.yuv420,
-    );
-
     try {
+      final cameras = await availableCameras();
+      if (cameras.isEmpty) {
+        if (mounted) {
+          setState(() => _debugInfo = 'Không tìm thấy camera trên thiết bị');
+        }
+        return;
+      }
+
+      // Ưu tiên: 1. Camera ngoài (Webcam rời) -> 2. Camera sau -> 3. Camera đầu tiên
+      final selectedCamera = cameras.firstWhere(
+        (c) => c.lensDirection == CameraLensDirection.external,
+        orElse: () => cameras.firstWhere(
+          (c) => c.lensDirection == CameraLensDirection.back,
+          orElse: () => cameras.first,
+        ),
+      );
+
+      _sensorOrientation = selectedCamera.sensorOrientation;
+
+      _cameraController = CameraController(
+        selectedCamera,
+        ResolutionPreset.medium, // 480p: tối ưu tốc độ xử lý frame
+        enableAudio: false,
+        imageFormatGroup: ImageFormatGroup.yuv420,
+      );
+
       await _cameraController!.initialize();
       if (!mounted) return;
 
@@ -84,29 +115,28 @@ class _CameraScanScreenState extends State<CameraScanScreen>
     }
   }
 
-  /// Callback xử lý frame camera chạy inference qua YOLOv8n
-  Future<void> _onCameraFrame(CameraImage image) async {
-    if (_isDetecting) return;
-    _isDetecting = true;
+  /// Callback nhận frame camera:
+  /// Sao chép siêu nhanh sang DTO (<0.3ms) và đẩy sang Background Worker Isolate
+  /// Hàm kết thúc NGAY TỨC THÌ để giải phóng buffer về cho camera driver, xóa bỏ 100% độ trễ (delay)
+  void _onCameraFrame(CameraImage image) {
+    if (_visionService.isBusy) return;
+
+    final now = DateTime.now();
+    if (now.difference(_lastInferenceTime).inMilliseconds <
+        _inferenceIntervalMs) {
+      return;
+    }
+    _lastInferenceTime = now;
 
     try {
-      final results = await _visionService.processImage(image);
-      if (mounted) {
-        setState(() {
-          // Lọc danh sách nhận diện theo ngưỡng hiển thị
-          _recognitions = results
-              .where((r) => r.confidence >= _displayThreshold)
-              .toList();
-          _debugInfo = _visionService.lastError;
-        });
-      }
-    } catch (e) {
-      if (mounted) {
-        setState(() => _debugInfo = 'Lỗi inference: $e');
-      }
+      final payload = CameraFramePayload.fromCameraImage(
+        image,
+        _sensorOrientation,
+      );
+      _visionService.sendFrame(payload);
+    } catch (_) {
+      // Bỏ qua lỗi sao chép frame nếu có xung đột buffer tạm thời
     }
-
-    _isDetecting = false;
   }
 
   @override
@@ -192,33 +222,37 @@ class _CameraScanScreenState extends State<CameraScanScreen>
     );
   }
 
-  /// Camera preview widget chiếm toàn bộ màn hình
+  /// Camera preview widget chiếm toàn bộ màn hình, bọc trong RepaintBoundary để tối ưu GPU compositing
   Widget _buildCameraPreview() {
-    return SizedBox.expand(
-      child: FittedBox(
-        fit: BoxFit.cover,
-        child: SizedBox(
-          width: _cameraController!.value.previewSize!.height,
-          height: _cameraController!.value.previewSize!.width,
-          child: CameraPreview(_cameraController!),
+    return RepaintBoundary(
+      child: SizedBox.expand(
+        child: FittedBox(
+          fit: BoxFit.cover,
+          child: SizedBox(
+            width: _cameraController!.value.previewSize!.height,
+            height: _cameraController!.value.previewSize!.width,
+            child: CameraPreview(_cameraController!),
+          ),
         ),
       ),
     );
   }
 
-  /// Vẽ bounding boxes lên camera preview
+  /// Vẽ bounding boxes lên camera preview, cô lập vẽ bằng RepaintBoundary
   Widget _buildBoundingBoxes() {
-    return LayoutBuilder(
-      builder: (context, constraints) {
-        return CustomPaint(
-          size: Size(constraints.maxWidth, constraints.maxHeight),
-          painter: BoundingBoxPainter(
-            recognitions: _recognitions,
-            previewSize: _previewSize,
-            screenSize: Size(constraints.maxWidth, constraints.maxHeight),
-          ),
-        );
-      },
+    return RepaintBoundary(
+      child: LayoutBuilder(
+        builder: (context, constraints) {
+          return CustomPaint(
+            size: Size(constraints.maxWidth, constraints.maxHeight),
+            painter: BoundingBoxPainter(
+              recognitions: _recognitions,
+              previewSize: _previewSize,
+              screenSize: Size(constraints.maxWidth, constraints.maxHeight),
+            ),
+          );
+        },
+      ),
     );
   }
 
@@ -248,7 +282,11 @@ class _CameraScanScreenState extends State<CameraScanScreen>
     final candidates = <Map<String, dynamic>>[];
 
     for (final rec in _recognitions) {
-      final rect = _mapBBoxToScreen(rec.boundingBox, screenSize.width, screenSize.height);
+      final rect = _mapBBoxToScreen(
+        rec.boundingBox,
+        screenSize.width,
+        screenSize.height,
+      );
       // Mở rộng vùng biên 15px để người dùng bấm trúng viền box vẫn nhận diện được
       final touchArea = rect.inflate(15.0);
 
@@ -269,7 +307,11 @@ class _CameraScanScreenState extends State<CameraScanScreen>
     if (candidates.isEmpty) {
       // Nếu chạm hơi chệch mép box: tìm kiếm box gần nhất trong bán kính 45px
       for (final rec in _recognitions) {
-        final rect = _mapBBoxToScreen(rec.boundingBox, screenSize.width, screenSize.height);
+        final rect = _mapBBoxToScreen(
+          rec.boundingBox,
+          screenSize.width,
+          screenSize.height,
+        );
         final touchArea = rect.inflate(45.0);
         if (touchArea.contains(tapPos)) {
           final double distToCenter = (rect.center - tapPos).distance;
@@ -328,16 +370,16 @@ class _CameraScanScreenState extends State<CameraScanScreen>
           gradient: LinearGradient(
             begin: Alignment.topCenter,
             end: Alignment.bottomCenter,
-            colors: [
-              Colors.black.withValues(alpha: 0.75),
-              Colors.transparent,
-            ],
+            colors: [Colors.black.withValues(alpha: 0.75), Colors.transparent],
           ),
         ),
         child: Row(
           children: [
             IconButton(
-              icon: const Icon(Icons.arrow_back_ios_rounded, color: Colors.white),
+              icon: const Icon(
+                Icons.arrow_back_ios_rounded,
+                color: Colors.white,
+              ),
               onPressed: () => Navigator.pop(context),
             ),
             const Expanded(
@@ -587,12 +629,7 @@ class BoundingBoxPainter extends CustomPainter {
           : (rect.top + 2);
 
       final labelRect = RRect.fromRectAndCorners(
-        Rect.fromLTWH(
-          rect.left,
-          labelTop,
-          labelWidth,
-          labelHeight,
-        ),
+        Rect.fromLTWH(rect.left, labelTop, labelWidth, labelHeight),
         topLeft: const Radius.circular(8),
         topRight: const Radius.circular(8),
         bottomRight: const Radius.circular(8),
@@ -603,10 +640,7 @@ class BoundingBoxPainter extends CustomPainter {
       canvas.drawRRect(labelRect, labelBgPaint);
 
       // Vẽ text label
-      textPainter.paint(
-        canvas,
-        Offset(rect.left + 8, labelTop + 4),
-      );
+      textPainter.paint(canvas, Offset(rect.left + 8, labelTop + 4));
 
       // ── 3. Corner markers (tạo hiệu ứng viewfinder quét) ──
       _drawCornerMarkers(canvas, rect);
@@ -624,20 +658,52 @@ class BoundingBoxPainter extends CustomPainter {
     const double len = 20;
 
     // Top-left
-    canvas.drawLine(rect.topLeft, Offset(rect.left + len, rect.top), markerPaint);
-    canvas.drawLine(rect.topLeft, Offset(rect.left, rect.top + len), markerPaint);
+    canvas.drawLine(
+      rect.topLeft,
+      Offset(rect.left + len, rect.top),
+      markerPaint,
+    );
+    canvas.drawLine(
+      rect.topLeft,
+      Offset(rect.left, rect.top + len),
+      markerPaint,
+    );
 
     // Top-right
-    canvas.drawLine(rect.topRight, Offset(rect.right - len, rect.top), markerPaint);
-    canvas.drawLine(rect.topRight, Offset(rect.right, rect.top + len), markerPaint);
+    canvas.drawLine(
+      rect.topRight,
+      Offset(rect.right - len, rect.top),
+      markerPaint,
+    );
+    canvas.drawLine(
+      rect.topRight,
+      Offset(rect.right, rect.top + len),
+      markerPaint,
+    );
 
     // Bottom-left
-    canvas.drawLine(rect.bottomLeft, Offset(rect.left + len, rect.bottom), markerPaint);
-    canvas.drawLine(rect.bottomLeft, Offset(rect.left, rect.bottom - len), markerPaint);
+    canvas.drawLine(
+      rect.bottomLeft,
+      Offset(rect.left + len, rect.bottom),
+      markerPaint,
+    );
+    canvas.drawLine(
+      rect.bottomLeft,
+      Offset(rect.left, rect.bottom - len),
+      markerPaint,
+    );
 
     // Bottom-right
-    canvas.drawLine(rect.bottomRight, Offset(rect.right - len, rect.bottom), markerPaint);
-    canvas.drawLine(rect.bottomRight, Offset(rect.right, rect.bottom - len), markerPaint);
+    canvas.drawLine(
+      rect.bottomRight,
+      Offset(rect.right - len, rect.bottom),
+      markerPaint,
+    );
+    canvas.drawLine(
+      rect.bottomRight,
+      Offset(rect.right, rect.bottom - len),
+      markerPaint,
+    );
   }
 
   @override

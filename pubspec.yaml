@@ -19,6 +19,7 @@ dependencies:
   
   # Camera & AI Vision
   camera: ^0.11.0+1
+  camera_android: ^0.10.12
   tflite_flutter: ^0.11.0
   image: ^4.1.7
   
