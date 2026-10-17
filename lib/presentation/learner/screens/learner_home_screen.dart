@@ -6,6 +6,11 @@ import '../../../data/models/vocabulary_item_model.dart';
 import '../../auth/providers/auth_provider.dart';
 import 'camera_scan_screen.dart';
 import 'vocabulary_notebook_screen.dart';
+import 'reading_practice_screen.dart';
+import 'listening_practice_screen.dart';
+import 'speaking_practice_screen.dart';
+import 'writing_practice_screen.dart';
+import '../widgets/saved_vocabulary_detail_bottom_sheet.dart';
 
 /// Khung giao diện chính (App Shell & Navigation) của Học viên (Learner).
 /// Tích hợp BottomNavigationBar chuyển đổi linh hoạt giữa Trang chủ, Sổ tay từ vựng và Cá nhân.
@@ -424,6 +429,9 @@ class _LearnerDashboardTabState extends State<_LearnerDashboardTab> {
                 ),
                 elevation: 0.5,
                 child: ListTile(
+                  onTap: () {
+                    SavedVocabularyDetailBottomSheet.show(context, item);
+                  },
                   leading: Container(
                     padding: const EdgeInsets.all(8),
                     decoration: BoxDecoration(
@@ -483,54 +491,117 @@ class _LearnerDashboardTabState extends State<_LearnerDashboardTab> {
           crossAxisSpacing: 10,
           childAspectRatio: 2.2,
           children: [
-            _buildSkillTile(Icons.headphones_rounded, 'Listening', 'Audio Player & Điền từ', Colors.blue),
-            _buildSkillTile(Icons.chrome_reader_mode_rounded, 'Reading', 'Học thuật & Tra từ', Colors.green),
-            _buildSkillTile(Icons.mic_rounded, 'Speaking', 'Chấm phát âm AI', Colors.orange),
-            _buildSkillTile(Icons.edit_note_rounded, 'Writing', 'Soạn thảo & Đếm từ', Colors.teal),
+            _buildSkillTile(
+              Icons.headphones_rounded,
+              'Listening',
+              'Audio Player & Điền từ',
+              Colors.blue,
+              onTap: () {
+                Navigator.push(
+                  context,
+                  MaterialPageRoute(
+                      builder: (_) => const ListeningPracticeScreen()),
+                );
+              },
+            ),
+            _buildSkillTile(
+              Icons.chrome_reader_mode_rounded,
+              'Reading',
+              'Học thuật & Tra từ',
+              Colors.green,
+              onTap: () {
+                Navigator.push(
+                  context,
+                  MaterialPageRoute(
+                      builder: (_) => const ReadingPracticeScreen()),
+                );
+              },
+            ),
+            _buildSkillTile(
+              Icons.mic_rounded,
+              'Speaking',
+              'Chấm phát âm AI',
+              Colors.orange,
+              onTap: () {
+                Navigator.push(
+                  context,
+                  MaterialPageRoute(
+                      builder: (_) => const SpeakingPracticeScreen()),
+                );
+              },
+            ),
+            _buildSkillTile(
+              Icons.edit_note_rounded,
+              'Writing',
+              'Soạn thảo & Đếm từ',
+              Colors.teal,
+              onTap: () {
+                Navigator.push(
+                  context,
+                  MaterialPageRoute(
+                      builder: (_) => const WritingPracticeScreen()),
+                );
+              },
+            ),
           ],
         ),
       ],
     );
   }
 
-  Widget _buildSkillTile(IconData icon, String title, String subtitle, Color color) {
-    return Container(
-      padding: const EdgeInsets.all(10),
-      decoration: BoxDecoration(
-        color: Colors.white,
+  Widget _buildSkillTile(
+    IconData icon,
+    String title,
+    String subtitle,
+    Color color, {
+    VoidCallback? onTap,
+  }) {
+    return Material(
+      color: Colors.white,
+      borderRadius: BorderRadius.circular(14),
+      child: InkWell(
+        onTap: onTap,
         borderRadius: BorderRadius.circular(14),
-        border: Border.all(color: Colors.grey[200]!),
-      ),
-      child: Row(
-        children: [
-          Container(
-            padding: const EdgeInsets.all(8),
-            decoration: BoxDecoration(
-              color: color.withValues(alpha: 0.1),
-              borderRadius: BorderRadius.circular(10),
-            ),
-            child: Icon(icon, color: color, size: 22),
+        child: Container(
+          padding: const EdgeInsets.all(10),
+          decoration: BoxDecoration(
+            borderRadius: BorderRadius.circular(14),
+            border: Border.all(color: Colors.grey[200]!),
           ),
-          const SizedBox(width: 10),
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              mainAxisAlignment: MainAxisAlignment.center,
-              children: [
-                Text(
-                  title,
-                  style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 14),
+          child: Row(
+            children: [
+              Container(
+                padding: const EdgeInsets.all(8),
+                decoration: BoxDecoration(
+                  color: color.withValues(alpha: 0.1),
+                  borderRadius: BorderRadius.circular(10),
                 ),
-                Text(
-                  subtitle,
-                  style: TextStyle(fontSize: 10.5, color: Colors.grey[600]),
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
+                child: Icon(icon, color: color, size: 22),
+              ),
+              const SizedBox(width: 10),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  mainAxisAlignment: MainAxisAlignment.center,
+                  children: [
+                    Text(
+                      title,
+                      style: const TextStyle(
+                          fontWeight: FontWeight.bold, fontSize: 14),
+                    ),
+                    Text(
+                      subtitle,
+                      style:
+                          TextStyle(fontSize: 10.5, color: Colors.grey[600]),
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                    ),
+                  ],
                 ),
-              ],
-            ),
+              ),
+            ],
           ),
-        ],
+        ),
       ),
     );
   }

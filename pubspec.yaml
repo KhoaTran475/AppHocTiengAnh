@@ -26,6 +26,9 @@ dependencies:
   sqflite: ^2.3.2
   path: ^1.9.0
   
+  # Supabase Backend
+  supabase_flutter: ^2.8.0
+  
   # Text To Speech
   flutter_tts: ^4.0.2
   

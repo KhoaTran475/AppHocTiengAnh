@@ -6,6 +6,8 @@ import 'package:path/path.dart';
 import '../../data/models/object_mapping_model.dart';
 import '../../data/models/vocabulary_item_model.dart';
 import '../../data/models/user_model.dart';
+import 'supabase_config.dart';
+import '../services/notebook_service.dart';
 
 /// Lớp Helper quản lý toàn bộ cơ sở dữ liệu SQLite nội bộ (Local Database).
 /// Tuân thủ nguyên tắc Singleton, xử lý Migration, CRUD và Auto-seeding dữ liệu IELTS.
@@ -231,14 +233,25 @@ class DatabaseHelper {
   // PHƯƠNG THỨC TRUY VẤN: VOCABULARY_NOTEBOOK (SỔ TAY CỦA HỌC VIÊN)
   // ─────────────────────────────────────────────────────────────
 
-  /// Lưu một từ vựng mới vào Sổ tay của Học viên
-  Future<int> insertNotebookItem(VocabularyItemModel item) async {
+  /// Lưu một từ vựng mới vào Sổ tay của Học viên (SQLite & Supabase)
+  Future<int> insertNotebookItem(
+    VocabularyItemModel item, {
+    String? username,
+    bool skipCloudSync = false,
+  }) async {
     final db = await instance.database;
-    return await db.insert(
+    final id = await db.insert(
       'Vocabulary_Notebook',
       item.toMap(),
       conflictAlgorithm: ConflictAlgorithm.replace,
     );
+
+    if (!skipCloudSync) {
+      // Tự động đẩy lên Supabase Cloud chạy ngầm
+      NotebookService.syncItemToSupabase(item, username: username);
+    }
+
+    return id;
   }
 
   /// Lấy toàn bộ danh sách từ vựng đã lưu của một Học viên cụ thể
@@ -253,14 +266,47 @@ class DatabaseHelper {
     return results.map((map) => VocabularyItemModel.fromMap(map)).toList();
   }
 
-  /// Xóa một từ vựng khỏi Sổ tay theo ID
-  Future<int> deleteNotebookItem(int id) async {
+  /// Xóa một từ vựng khỏi Sổ tay theo ID (và Supabase)
+  Future<int> deleteNotebookItem(
+    int id, {
+    String? word,
+    String? username,
+    int? localUserId,
+  }) async {
     final db = await instance.database;
-    return await db.delete(
+
+    // Nếu chưa truyền word, query từ db để biết từ nào cần xóa trên Supabase
+    String? targetWord = word;
+    int? targetUserId = localUserId;
+    if (targetWord == null) {
+      final res = await db.query(
+        'Vocabulary_Notebook',
+        columns: ['word', 'userId'],
+        where: 'id = ?',
+        whereArgs: [id],
+        limit: 1,
+      );
+      if (res.isNotEmpty) {
+        targetWord = res.first['word'] as String?;
+        targetUserId ??= res.first['userId'] as int?;
+      }
+    }
+
+    final result = await db.delete(
       'Vocabulary_Notebook',
       where: 'id = ?',
       whereArgs: [id],
     );
+
+    if (targetWord != null && targetWord.isNotEmpty) {
+      NotebookService.deleteFromSupabase(
+        word: targetWord,
+        username: username,
+        localUserId: targetUserId,
+      );
+    }
+
+    return result;
   }
 
   /// Kiểm tra xem học viên này đã lưu nhãn/từ này vào Sổ tay chưa
@@ -341,12 +387,60 @@ class DatabaseHelper {
     required String role,
   }) async {
     final db = await instance.database;
-    return await db.insert('Users', {
+    final nowStr = DateTime.now().toIso8601String();
+    final res = await db.insert('Users', {
       'username': username,
       'password': password,
       'role': role,
-      'createdAt': DateTime.now().toIso8601String(),
+      'createdAt': nowStr,
     });
+
+    // 🌐 ĐỒNG BỘ NGUỜI DÙNG MỚI LÊN SUPABASE (PROFILES)
+    try {
+      await SupabaseConfig.client.from('profiles').upsert({
+        'username': username,
+        'role': role,
+        'created_at': nowStr,
+        'updated_at': nowStr,
+      }, onConflict: 'username');
+      log('✅ Đã đồng bộ tài khoản mới "$username" ($role) lên Supabase profiles!');
+    } catch (e) {
+      log('⚠️ Lỗi đồng bộ tài khoản mới lên Supabase: $e');
+    }
+
+    return res;
+  }
+
+  /// Đồng bộ toàn bộ danh sách tài khoản từ SQLite lên Supabase profiles
+  Future<void> syncAllUsersToSupabase() async {
+    try {
+      final db = await instance.database;
+      final users = await db.query('Users');
+      for (final u in users) {
+        final username = u['username'] as String;
+        final role = u['role'] as String? ?? 'learner';
+        final createdAt = u['createdAt'] as String? ?? DateTime.now().toIso8601String();
+
+        // Thử đăng ký qua Auth trước để thỏa mãn ràng buộc auth.users(id)
+        try {
+          await SupabaseConfig.client.auth.signUp(
+            email: '$username@app.com',
+            password: 'password123',
+            data: {'username': username, 'role': role},
+          );
+        } catch (_) {}
+
+        await SupabaseConfig.client.from('profiles').upsert({
+          'username': username,
+          'role': role,
+          'created_at': createdAt,
+          'updated_at': createdAt,
+        }, onConflict: 'username');
+        log('✅ Đã đồng bộ tài khoản "$username" ($role) lên Supabase profiles!');
+      }
+    } catch (e) {
+      log('⚠️ Lỗi đồng bộ tài khoản lên Supabase: $e');
+    }
   }
 
   /// Xóa người dùng theo ID (không xóa được tài khoản admin chính)

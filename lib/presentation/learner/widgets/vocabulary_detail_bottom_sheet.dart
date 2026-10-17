@@ -102,7 +102,7 @@ class _VocabularyDetailBottomSheetState
       createdAt: DateTime.now().toIso8601String(),
     );
 
-    await DatabaseHelper.instance.insertNotebookItem(item);
+    await DatabaseHelper.instance.insertNotebookItem(item, username: currentUser.username);
 
     if (mounted) {
       setState(() => _isSaved = true);

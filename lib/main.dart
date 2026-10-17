@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
+import 'core/database/supabase_config.dart';
 import 'core/theme/app_theme.dart';
 import 'presentation/auth/providers/auth_provider.dart';
 import 'presentation/auth/screens/login_screen.dart';
@@ -8,6 +9,9 @@ import 'presentation/admin/screens/admin_dashboard_screen.dart';
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
+  
+  // Khởi tạo kết nối Supabase
+  await SupabaseConfig.init();
   
   runApp(
     MultiProvider(

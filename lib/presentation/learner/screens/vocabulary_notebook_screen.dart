@@ -2,10 +2,12 @@ import 'package:flutter/material.dart';
 import 'package:flutter_tts/flutter_tts.dart';
 import 'package:provider/provider.dart';
 import '../../../core/database/database_helper.dart';
+import '../../../core/services/notebook_service.dart';
 import '../../../core/theme/app_theme.dart';
 import '../../../data/models/vocabulary_item_model.dart';
 import '../../auth/providers/auth_provider.dart';
 import 'camera_scan_screen.dart';
+import '../widgets/saved_vocabulary_detail_bottom_sheet.dart';
 
 /// Màn hình Sổ tay từ vựng nội bộ (Local Vocabulary Notebook) của Học viên.
 /// Hỗ trợ tìm kiếm, lọc theo band điểm, nghe phát âm TTS và xem lại chi tiết từ đã lưu từ camera.
@@ -48,6 +50,7 @@ class _VocabularyNotebookScreenState extends State<VocabularyNotebookScreen> {
     final currentUser = context.read<AuthProvider>().currentUser;
     if (currentUser == null || currentUser.id == null) return;
 
+    // 1. Tải danh sách từ SQLite để hiển thị ngay lập tức
     final words =
         await DatabaseHelper.instance.getNotebookItemsByUser(currentUser.id!);
 
@@ -56,6 +59,23 @@ class _VocabularyNotebookScreenState extends State<VocabularyNotebookScreen> {
         _allWords = words;
         _applyFilter();
         _isLoading = false;
+      });
+    }
+
+    // 2. Đồng bộ 2 chiều với Supabase Cloud
+    await NotebookService.syncNotebook(
+      localUserId: currentUser.id!,
+      username: currentUser.username,
+    );
+
+    // 3. Cập nhật lại danh sách nếu có từ mới kéo từ Supabase về
+    final refreshedWords =
+        await DatabaseHelper.instance.getNotebookItemsByUser(currentUser.id!);
+
+    if (mounted && refreshedWords.length != _allWords.length) {
+      setState(() {
+        _allWords = refreshedWords;
+        _applyFilter();
       });
     }
   }
@@ -94,6 +114,8 @@ class _VocabularyNotebookScreenState extends State<VocabularyNotebookScreen> {
   Future<void> _deleteWord(VocabularyItemModel item) async {
     if (item.id == null) return;
 
+    final currentUser = context.read<AuthProvider>().currentUser;
+
     final confirmed = await showDialog<bool>(
       context: context,
       builder: (ctx) => AlertDialog(
@@ -115,7 +137,12 @@ class _VocabularyNotebookScreenState extends State<VocabularyNotebookScreen> {
     );
 
     if (confirmed == true) {
-      await DatabaseHelper.instance.deleteNotebookItem(item.id!);
+      await DatabaseHelper.instance.deleteNotebookItem(
+        item.id!,
+        word: item.word,
+        username: currentUser?.username,
+        localUserId: currentUser?.id,
+      );
       await _loadWords();
 
       if (mounted) {
@@ -304,13 +331,7 @@ class _VocabularyNotebookScreenState extends State<VocabularyNotebookScreen> {
           child: InkWell(
             borderRadius: BorderRadius.circular(16),
             onTap: () {
-              setState(() {
-                if (isExpanded) {
-                  _expandedCardIds.remove(item.id);
-                } else {
-                  if (item.id != null) _expandedCardIds.add(item.id!);
-                }
-              });
+              SavedVocabularyDetailBottomSheet.show(context, item);
             },
             child: Padding(
               padding: const EdgeInsets.all(16),
