@@ -1,0 +1,1232 @@
+[
+  {
+    "label": "person",
+    "common_word": "Person",
+    "vietnamese_meaning": "Người, cá nhân",
+    "academic_word": "Individual / Pedestrian",
+    "ipa": "/ˈpɜː.sən/",
+    "band_score": "7.5",
+    "collocations": [
+      "a well-dressed individual (một người ăn mặc chỉn chu)",
+      "autonomous individual (cá nhân tự chủ)"
+    ],
+    "idioms": "A people person (Người hòa đồng, giỏi giao tiếp)",
+    "speaking_part1_example": "In urban environments, individual pedestrians frequently face congestion and pollution challenges.",
+    "speaking_part1_translation": "Ở các môi trường đô thị, những người đi bộ thường xuyên phải đối mặt với các vấn đề về tắc đường và ô nhiễm."
+  },
+  {
+    "label": "bicycle",
+    "common_word": "Bicycle",
+    "vietnamese_meaning": "Xe đạp",
+    "academic_word": "Pedal cycle / Two-wheeled conveyance",
+    "ipa": "/ˈbaɪ.sɪ.kəl/",
+    "band_score": "7.0",
+    "collocations": [
+      "pedal cycle infrastructure (hạ tầng dành cho xe đạp)",
+      "eco-friendly commuter (người đi lại thân thiện môi trường)"
+    ],
+    "idioms": "On your bike (Tự thân vận động / Hãy đi đi)",
+    "speaking_part1_example": "Metropolitan authorities ought to invest heavily in pedal cycle infrastructure to curb carbon emissions.",
+    "speaking_part1_translation": "Chính quyền đô thị nên đầu tư mạnh vào cơ sở hạ tầng xe đạp nhằm hạn chế lượng khí thải carbon."
+  },
+  {
+    "label": "car",
+    "common_word": "Car",
+    "vietnamese_meaning": "Xe hơi, ô tô",
+    "academic_word": "Automobile / Motor vehicle",
+    "ipa": "/kɑːr/",
+    "band_score": "7.5",
+    "collocations": [
+      "fuel-efficient automobile (xe hơi tiết kiệm nhiên liệu)",
+      "autonomous vehicle (phương tiện tự hành)"
+    ],
+    "idioms": "In the driver's seat (Nắm quyền điều khiển, làm chủ tình thế)",
+    "speaking_part1_example": "The widespread adoption of electric automobiles represents a pivotal transition toward sustainable transport.",
+    "speaking_part1_translation": "Việc áp dụng rộng rãi xe ô tô điện thể hiện một bước chuyển mình then chốt hướng tới giao thông bền vững."
+  },
+  {
+    "label": "motorbike",
+    "common_word": "Motorbike",
+    "vietnamese_meaning": "Xe máy, xe mô tô",
+    "academic_word": "Motorcycle / Two-wheeled vehicle",
+    "ipa": "/ˈmoʊ.tər.baɪk/",
+    "band_score": "7.0",
+    "collocations": [
+      "maneuver through traffic (luồn lách qua dòng xe)",
+      "motorized two-wheeler (xe hai bánh gắn máy)"
+    ],
+    "idioms": "Shift into high gear (Tăng tốc hết công suất)",
+    "speaking_part1_example": "Motorcycles remain the predominant mode of transport in developing nations due to affordability.",
+    "speaking_part1_translation": "Xe máy vẫn là phương tiện giao thông chủ đạo ở các nước đang phát triển nhờ giá cả phải chăng."
+  },
+  {
+    "label": "aeroplane",
+    "common_word": "Airplane / Aeroplane",
+    "vietnamese_meaning": "Máy bay",
+    "academic_word": "Aircraft / Aviation vessel",
+    "ipa": "/ˈer.pleɪn/",
+    "band_score": "8.0",
+    "collocations": [
+      "commercial aviation (hàng không thương mại)",
+      "long-haul flight (chuyến bay đường dài)"
+    ],
+    "idioms": "Fly high (Thành công vang dội)",
+    "speaking_part1_example": "Technological breakthroughs in modern aircraft have substantially curtailed transcontinental travel times.",
+    "speaking_part1_translation": "Những đột phá công nghệ trên máy bay hiện đại đã rút ngắn đáng kể thời gian di chuyển xuyên lục địa."
+  },
+  {
+    "label": "bus",
+    "common_word": "Bus",
+    "vietnamese_meaning": "Xe buýt",
+    "academic_word": "Public transit coach / Commuter bus",
+    "ipa": "/bʌs/",
+    "band_score": "7.0",
+    "collocations": [
+      "mass transit system (hệ thống vận tải công cộng khối lượng lớn)",
+      "subsidized bus fares (giá vé xe buýt được trợ giá)"
+    ],
+    "idioms": "Throw under the bus (Đổ lỗi / Phản bội ai đó)",
+    "speaking_part1_example": "Affordable public transit coaches encourage inhabitants to relinquish private vehicles.",
+    "speaking_part1_translation": "Những chuyến xe buýt công cộng giá cả phải chăng khuyến khích người dân từ bỏ xe cá nhân."
+  },
+  {
+    "label": "train",
+    "common_word": "Train",
+    "vietnamese_meaning": "Tàu hỏa, xe lửa",
+    "academic_word": "Railway locomotive / Mass transit rail",
+    "ipa": "/treɪn/",
+    "band_score": "7.5",
+    "collocations": [
+      "high-speed railway network (mạng lưới đường sắt cao tốc)",
+      "commuter rail service (dịch vụ đường sắt ngoại ô)"
+    ],
+    "idioms": "Train of thought (Mạch suy nghĩ)",
+    "speaking_part1_example": "High-speed rail networks provide an energy-efficient alternative to domestic aviation.",
+    "speaking_part1_translation": "Mạng lưới đường sắt cao tốc cung cấp giải pháp thay thế tiết kiệm năng lượng cho các chuyến bay nội địa."
+  },
+  {
+    "label": "truck",
+    "common_word": "Truck",
+    "vietnamese_meaning": "Xe tải",
+    "academic_word": "Heavy goods vehicle (HGV) / Freight vehicle",
+    "ipa": "/trʌk/",
+    "band_score": "8.0",
+    "collocations": [
+      "freight haulage (vận chuyển hàng hóa)",
+      "supply chain logistics (hậu cần chuỗi cung ứng)"
+    ],
+    "idioms": "Keep on trucking (Kiên trì tiếp tục tiến lên)",
+    "speaking_part1_example": "Freight vehicles are integral to global supply chains, transporting merchandise across continents.",
+    "speaking_part1_translation": "Các phương tiện vận tải hàng hóa là một phần không thể thiếu trong chuỗi cung ứng toàn cầu, giúp luân chuyển hàng hóa xuyên lục địa."
+  },
+  {
+    "label": "boat",
+    "common_word": "Boat",
+    "vietnamese_meaning": "Thuyền, tàu nhỏ",
+    "academic_word": "Maritime vessel / Watercraft",
+    "ipa": "/boʊt/",
+    "band_score": "7.5",
+    "collocations": [
+      "inland water transport (giao thông thủy nội địa)",
+      "navigable waterways (các tuyến đường thủy thông thoáng)"
+    ],
+    "idioms": "In the same boat (Cùng hội cùng thuyền, cùng hoàn cảnh khó khăn)",
+    "speaking_part1_example": "Traditional watercraft continue to stimulate eco-tourism and sustain riverine communities.",
+    "speaking_part1_translation": "Những chiếc thuyền truyền thống tiếp tục thúc đẩy du lịch sinh thái và nuôi sống các cộng đồng ven sông."
+  },
+  {
+    "label": "traffic light",
+    "common_word": "Traffic light",
+    "vietnamese_meaning": "Đèn giao thông",
+    "academic_word": "Automated traffic regulatory signal",
+    "ipa": "/ˈtræf.ɪk ˌlaɪt/",
+    "band_score": "7.5",
+    "collocations": [
+      "traffic flow regulation (điều tiết luồng giao thông)",
+      "smart signaling system (hệ thống tín hiệu thông minh)"
+    ],
+    "idioms": "Give the green light (Bật đèn xanh / Cho phép tiến hành)",
+    "speaking_part1_example": "Synchronized traffic regulatory signals drastically mitigate bottleneck congestion during rush hours.",
+    "speaking_part1_translation": "Các cột đèn tín hiệu điều tiết giao thông được đồng bộ hóa giúp giảm thiểu đáng kể tình trạng ùn tắc vào giờ cao điểm."
+  },
+  {
+    "label": "fire hydrant",
+    "common_word": "Fire hydrant",
+    "vietnamese_meaning": "Trụ nước chữa cháy",
+    "academic_word": "Municipal emergency water outlet",
+    "ipa": "/ˈfaɪər ˌhaɪ.drənt/",
+    "band_score": "8.0",
+    "collocations": [
+      "fire suppression infrastructure (hạ tầng dập lửa)",
+      "high-pressure water supply (nguồn cấp nước áp lực cao)"
+    ],
+    "idioms": "Drink from a fire hose (Bị quá tải thông tin dồn dập)",
+    "speaking_part1_example": "Adequate distribution of municipal emergency water outlets is vital for effective urban disaster management.",
+    "speaking_part1_translation": "Sự phân bố đầy đủ các trụ nước cứu hỏa đô thị là cực kỳ cần thiết cho công tác quản trị thảm họa hiệu quả."
+  },
+  {
+    "label": "stop sign",
+    "common_word": "Stop sign",
+    "vietnamese_meaning": "Biển báo dừng lại",
+    "academic_word": "Mandatory traffic stoppage indicator",
+    "ipa": "/ˈstɑːp ˌsaɪn/",
+    "band_score": "7.0",
+    "collocations": [
+      "traffic compliance (tuân thủ luật giao thông)",
+      "pedestrian safety priority (ưu tiên an toàn người đi bộ)"
+    ],
+    "idioms": "Pull out all the stops (Dốc hết sức lực)",
+    "speaking_part1_example": "Strict adherence to mandatory traffic stoppage indicators significantly decreases intersection collisions.",
+    "speaking_part1_translation": "Sự tuân thủ nghiêm ngặt các biển báo dừng bắt buộc giúp giảm thiểu đáng kể các vụ va chạm tại giao lộ."
+  },
+  {
+    "label": "parking meter",
+    "common_word": "Parking meter",
+    "vietnamese_meaning": "Đồng hồ đỗ xe có thu phí",
+    "academic_word": "Automated vehicular parking tariff device",
+    "ipa": "/ˈpɑːr.kɪŋ ˌmiː.tər/",
+    "band_score": "7.5",
+    "collocations": [
+      "urban congestion pricing (thu phí chống ùn tắc đô thị)",
+      "metered street parking (đỗ xe đường phố tính cước)"
+    ],
+    "idioms": "On borrowed time (Thời gian có hạn)",
+    "speaking_part1_example": "Installing digital parking tariff devices discourages non-essential vehicular access into city centers.",
+    "speaking_part1_translation": "Việc lắp đặt các thiết bị tính phí đỗ xe tự động giúp hạn chế phương tiện không cần thiết vào trung tâm thành phố."
+  },
+  {
+    "label": "bench",
+    "common_word": "Bench",
+    "vietnamese_meaning": "Băng ghế ngồi công cộng",
+    "academic_word": "Communal public seating fixture",
+    "ipa": "/bentʃ/",
+    "band_score": "7.0",
+    "collocations": [
+      "pedestrian amenities (tiện ích cho người đi bộ)",
+      "urban landscaping (thiết kế cảnh quan đô thị)"
+    ],
+    "idioms": "Warm the bench (Làm dự bị, chưa được ra sân)",
+    "speaking_part1_example": "Public seating fixtures foster social cohesion by creating informal meeting spaces for community residents.",
+    "speaking_part1_translation": "Các băng ghế công cộng thắt chặt tình đoàn kết xã hội bằng cách tạo ra không gian gặp gỡ gần gũi cho cư dân."
+  },
+  {
+    "label": "bird",
+    "common_word": "Bird",
+    "vietnamese_meaning": "Chim chóc",
+    "academic_word": "Avian species / Feathered vertebrate",
+    "ipa": "/bɜːrd/",
+    "band_score": "8.0",
+    "collocations": [
+      "avian biodiversity (đa dạng sinh học loài chim)",
+      "migratory bird corridor (hành lang chim di cư)"
+    ],
+    "idioms": "A bird's-eye view (Góc nhìn toàn cảnh từ trên cao)",
+    "speaking_part1_example": "Preserving natural wetlands is indispensable to ensure the survival of countless migratory avian species.",
+    "speaking_part1_translation": "Bảo tồn các vùng đất ngập nước tự nhiên là điều không thể thiếu để đảm bảo sự sinh tồn của vô số loài chim di cư."
+  },
+  {
+    "label": "cat",
+    "common_word": "Cat",
+    "vietnamese_meaning": "Mèo",
+    "academic_word": "Domesticated feline / Companion animal",
+    "ipa": "/kæt/",
+    "band_score": "7.5",
+    "collocations": [
+      "feline companion (bạn đồng hành họ mèo)",
+      "carnivorous mammal (động vật có vú ăn thịt)"
+    ],
+    "idioms": "Let the cat out of the bag (Vô tình làm lộ bí mật)",
+    "speaking_part1_example": "Domesticated felines provide exceptional psychological comfort, mitigating loneliness among elderly citizens.",
+    "speaking_part1_translation": "Mèo nuôi mang lại sự an ủi tâm lý tuyệt vời, giúp giảm bớt nỗi cô đơn cho người cao tuổi."
+  },
+  {
+    "label": "dog",
+    "common_word": "Dog",
+    "vietnamese_meaning": "Chó",
+    "academic_word": "Canine quadruped / Domestic companion",
+    "ipa": "/dɔːɡ/",
+    "band_score": "7.5",
+    "collocations": [
+      "canine-assisted therapy (trị liệu tâm lý với chó)",
+      "unconditional loyalty (lòng trung thành vô điều kiện)"
+    ],
+    "idioms": "Every dog has its day (Ai rồi cũng sẽ có lúc gặp vận may)",
+    "speaking_part1_example": "Trained canine companions assist visually impaired individuals in navigating bustling municipal environments.",
+    "speaking_part1_translation": "Những chú chó trợ giúp được huấn luyện bài bản giúp người khiếm thị di chuyển an toàn trong môi trường đô thị nhộn nhịp."
+  },
+  {
+    "label": "horse",
+    "common_word": "Horse",
+    "vietnamese_meaning": "Ngựa",
+    "academic_word": "Equine mammal / Steed",
+    "ipa": "/hɔːrs/",
+    "band_score": "8.0",
+    "collocations": [
+      "equestrian activities (các hoạt động cưỡi ngựa)",
+      "draft animal (động vật kéo cày/xe)"
+    ],
+    "idioms": "Hold your horses (Hãy kiên nhẫn, bình tĩnh lại)",
+    "speaking_part1_example": "Equine therapy has gained international recognition for boosting neurological rehabilitation in youth.",
+    "speaking_part1_translation": "Liệu pháp phục hồi với ngựa đã được quốc tế công nhận vì giúp thúc đẩy phục hồi chức năng thần kinh ở giới trẻ."
+  },
+  {
+    "label": "sheep",
+    "common_word": "Sheep",
+    "vietnamese_meaning": "Cừu",
+    "academic_word": "Ovine livestock / Ruminant",
+    "ipa": "/ʃiːp/",
+    "band_score": "8.0",
+    "collocations": [
+      "pastoral farming (chăn nuôi gia súc trên đồng cỏ)",
+      "wool and dairy production (sản xuất len và sữa)"
+    ],
+    "idioms": "Black sheep of the family (Kẻ khác biệt/lạc loài trong gia đình)",
+    "speaking_part1_example": "Sustainable grazing of ovine livestock prevents shrub encroaching and preserves grassland ecosystems.",
+    "speaking_part1_translation": "Việc chăn thả cừu bền vững giúp ngăn ngừa bụi rậm xâm lấn và bảo vệ hệ sinh thái đồng cỏ."
+  },
+  {
+    "label": "cow",
+    "common_word": "Cow",
+    "vietnamese_meaning": "Bò cái",
+    "academic_word": "Bovine livestock / Cattle",
+    "ipa": "/kaʊ/",
+    "band_score": "7.5",
+    "collocations": [
+      "dairy agribusiness (ngành nông nghiệp chế biến sữa)",
+      "enteric methane emissions (khí thải mê-tan đường ruột)"
+    ],
+    "idioms": "Till the cows come home (Trong một thời gian rất dài/vô tận)",
+    "speaking_part1_example": "Mitigating methane emissions from bovine herds is pivotal in decelerating global temperature rises.",
+    "speaking_part1_translation": "Cắt giảm lượng khí thải mê-tan từ đàn bò là mấu chốt trong việc làm chậm lại đà tăng nhiệt độ toàn cầu."
+  },
+  {
+    "label": "elephant",
+    "common_word": "Elephant",
+    "vietnamese_meaning": "Con voi",
+    "academic_word": "Keystone pachyderm / Herbivorous giant",
+    "ipa": "/ˈel.ə.fənt/",
+    "band_score": "8.5",
+    "collocations": [
+      "keystone species (loài chủ chốt hệ sinh thái)",
+      "poaching prevention (ngăn chặn săn bắn trộm)"
+    ],
+    "idioms": "The elephant in the room (Vấn đề hiển nhiên mà mọi người né tránh nói đến)",
+    "speaking_part1_example": "As keystone pachyderms, elephants disperse seeds across vast tropical landscapes, sustaining forest regenerations.",
+    "speaking_part1_translation": "Là loài chủ chốt, voi phát tán hạt giống qua các vùng đất nhiệt đới rộng lớn, giúp duy trì sự tái sinh rừng."
+  },
+  {
+    "label": "bear",
+    "common_word": "Bear",
+    "vietnamese_meaning": "Con gấu",
+    "academic_word": "Ursine predator / Apex carnivore",
+    "ipa": "/ber/",
+    "band_score": "8.0",
+    "collocations": [
+      "hibernation cycle (chu kỳ ngủ đông)",
+      "apex predator (kẻ săn mồi đỉnh bảng)"
+    ],
+    "idioms": "Bear the brunt of (Hứng chịu toàn bộ hậu quả nặng nề nhất)",
+    "speaking_part1_example": "Ursine populations serve as vital biological indicators reflecting the health of subarctic habitats.",
+    "speaking_part1_translation": "Quần thể gấu đóng vai trò là chỉ báo sinh học thiết yếu phản ánh tình trạng sức khỏe của môi trường sống cận Bắc Cực."
+  },
+  {
+    "label": "zebra",
+    "common_word": "Zebra",
+    "vietnamese_meaning": "Ngựa vằn",
+    "academic_word": "Striped equine / Savanna herbivore",
+    "ipa": "/ˈziː.brə/",
+    "band_score": "7.5",
+    "collocations": [
+      "distinctive monochrome coat (lớp lông sọc đen trắng đặc trưng)",
+      "predator deterrence (ngăn chặn kẻ săn mồi)"
+    ],
+    "idioms": "A zebra can't change its stripes (Giang sơn dễ đổi, bản tính khó dời)",
+    "speaking_part1_example": "The monochrome patterns of striped equines disrupt the optical targeting systems of biting insects.",
+    "speaking_part1_translation": "Các sọc đen trắng của loài ngựa vằn làm rối loạn hệ thống định vị thị giác của các loài côn trùng cắn."
+  },
+  {
+    "label": "giraffe",
+    "common_word": "Giraffe",
+    "vietnamese_meaning": "Hươu cao cổ",
+    "academic_word": "Long-necked ungulate",
+    "ipa": "/dʒɪˈræf/",
+    "band_score": "8.0",
+    "collocations": [
+      "canopy browsing (ăn lá ngọn cây)",
+      "cardiovascular adaptation (sự thích nghi của hệ tim mạch)"
+    ],
+    "idioms": "Stick one's neck out (Liều mình chấp nhận rủi ro)",
+    "speaking_part1_example": "The extraordinary cardiovascular adaptations of long-necked ungulates allow blood to reach supreme heights.",
+    "speaking_part1_translation": "Sự thích nghi tim mạch phi thường của loài động vật móng guốc cổ cao cho phép máu bơm lên độ cao đáng kinh ngạc."
+  },
+  {
+    "label": "backpack",
+    "common_word": "Backpack",
+    "vietnamese_meaning": "Ba lô, cặp đeo lưng",
+    "academic_word": "Ergonomic rucksack / Knapsack",
+    "ipa": "/ˈbæk.pæk/",
+    "band_score": "7.5",
+    "collocations": [
+      "distribute weight evenly (phân bổ trọng lượng đồng đều)",
+      "water-resistant fabric (vải chống thấm nước)"
+    ],
+    "idioms": "Pack a punch (Có tác động mạnh mẽ, uy lực)",
+    "speaking_part1_example": "Utilizing an ergonomic rucksack prevents chronic musculoskeletal disorders among scholars carrying textbooks.",
+    "speaking_part1_translation": "Sử dụng ba lô công thái học giúp ngăn ngừa các rối loạn cơ xương mãn tính ở học sinh khi phải mang nhiều sách giáo khoa."
+  },
+  {
+    "label": "umbrella",
+    "common_word": "Umbrella",
+    "vietnamese_meaning": "Cây dù, ô che mưa",
+    "academic_word": "Protective canopy / Parasol",
+    "ipa": "/ʌmˈbrel.ə/",
+    "band_score": "7.5",
+    "collocations": [
+      "shield from precipitation (che chắn khỏi mưa gió)",
+      "collapsible canopy (mái che gấp gọn được)"
+    ],
+    "idioms": "Under the umbrella of (Dưới sự bảo trợ/chi phối của tổ chức nào đó)",
+    "speaking_part1_example": "A reliable collapsible canopy is an indispensable accessory when confronting unpredictable downpours.",
+    "speaking_part1_translation": "Một chiếc ô gấp gọn tiện lợi là vật dụng không thể thiếu khi đối phó với những trận mưa rào bất chợt."
+  },
+  {
+    "label": "handbag",
+    "common_word": "Handbag",
+    "vietnamese_meaning": "Túi xách",
+    "academic_word": "Pocketbook / Portable satchel",
+    "ipa": "/ˈhænd.bæɡ/",
+    "band_score": "7.0",
+    "collocations": [
+      "personal belongings receptacle (nơi chứa đồ đạc cá nhân)",
+      "sartorial elegance (vẻ sang trọng về trang phục)"
+    ],
+    "idioms": "In the bag (Chắc chắn thành công, nắm chắc trong tay)",
+    "speaking_part1_example": "Beyond utilitarian functions, portable satchels frequently epitomize status and aesthetic preferences.",
+    "speaking_part1_translation": "Vượt ra ngoài công năng tiện ích, túi xách thường là biểu tượng cho địa vị và gu thẩm mỹ cá nhân."
+  },
+  {
+    "label": "tie",
+    "common_word": "Tie",
+    "vietnamese_meaning": "Cà vạt",
+    "academic_word": "Neckwear / Formal cravat",
+    "ipa": "/taɪ/",
+    "band_score": "8.0",
+    "collocations": [
+      "formal sartorial etiquette (quy tắc trang phục chỉnh tề)",
+      "corporate dress code (quy định trang phục công sở)"
+    ],
+    "idioms": "Tie the knot (Kết hôn, lập gia đình)",
+    "speaking_part1_example": "Adhering to professional neckwear etiquette enhances an executive's demeanor in diplomatic negotiations.",
+    "speaking_part1_translation": "Việc tuân thủ quy tắc đeo cà vạt chuyên nghiệp làm tăng thêm phong thái đĩnh đạc của nhà quản lý trong đàm phán."
+  },
+  {
+    "label": "suitcase",
+    "common_word": "Suitcase",
+    "vietnamese_meaning": "Vali, hành lý",
+    "academic_word": "Luggage receptacle / Travel trunk",
+    "ipa": "/ˈsuːt.keɪs/",
+    "band_score": "7.5",
+    "collocations": [
+      "transcontinental transit (di chuyển xuyên lục địa)",
+      "heavy-duty caster wheels (bánh xe kéo chịu tải cao)"
+    ],
+    "idioms": "Pack your bags (Chuẩn bị rời đi / Sẵn sàng cho chuyến đi mới)",
+    "speaking_part1_example": "Durable luggage receptacles equipped with security locks safeguard valuables during long-distance voyages.",
+    "speaking_part1_translation": "Vali bền bỉ có khóa bảo mật an toàn giúp bảo vệ đồ vật quý giá trong suốt các hành trình dài ngày."
+  },
+  {
+    "label": "frisbee",
+    "common_word": "Frisbee",
+    "vietnamese_meaning": "Đĩa bay thể thao",
+    "academic_word": "Aerodynamic flying disc",
+    "ipa": "/ˈfrɪz.bi/",
+    "band_score": "7.5",
+    "collocations": [
+      "aerodynamic trajectory (quỹ đạo khí động học)",
+      "recreational leisure activity (hoạt động vui chơi giải trí)"
+    ],
+    "idioms": "Throw caution to the wind (Hành động liều lĩnh bất chấp hậu quả)",
+    "speaking_part1_example": "Engaging in aerodynamic flying disc sports encourages cardiovascular stamina among campus youths.",
+    "speaking_part1_translation": "Tham gia ném đĩa bay thể thao giúp rèn luyện sức bền tim mạch cho thanh niên tại các khuôn viên trường học."
+  },
+  {
+    "label": "skis",
+    "common_word": "Skis",
+    "vietnamese_meaning": "Ván trượt tuyết",
+    "academic_word": "Alpine skiing runners / Snow gliders",
+    "ipa": "/skiːz/",
+    "band_score": "8.0",
+    "collocations": [
+      "winter sports tourism (du lịch thể thao mùa đông)",
+      "alpine terrain navigation (chinh phục địa hình núi tuyết)"
+    ],
+    "idioms": "On thin ice (Đang ở trong tình thế vô cùng nguy hiểm)",
+    "speaking_part1_example": "Alpine sports tourism injects substantial financial prosperity into isolated mountainous municipalities.",
+    "speaking_part1_translation": "Du lịch thể thao trượt tuyết mùa đông mang lại sự thịnh vượng kinh tế đáng kể cho các đô thị miền núi hẻo lánh."
+  },
+  {
+    "label": "snowboard",
+    "common_word": "Snowboard",
+    "vietnamese_meaning": "Ván trượt tuyết đơn",
+    "academic_word": "Winter gliding board",
+    "ipa": "/ˈsnoʊ.bɔːrd/",
+    "band_score": "7.5",
+    "collocations": [
+      "extreme sports enthusiast (người đam mê thể thao mạo hiểm)",
+      "high-adrenaline pursuit (hoạt động mang lại cảm giác mạnh)"
+    ],
+    "idioms": "Snowed under (Ngập đầu trong công việc)",
+    "speaking_part1_example": "Navigating powder slopes upon a gliding board demands extraordinary agility and equilibrium.",
+    "speaking_part1_translation": "Lướt trên sườn dốc phủ tuyết bằng ván trượt đòi hỏi sự dẻo dai và khả năng giữ thăng bằng phi thường."
+  },
+  {
+    "label": "sports ball",
+    "common_word": "Sports ball",
+    "vietnamese_meaning": "Quả bóng thể thao",
+    "academic_word": "Inflatable athletic sphere",
+    "ipa": "/ˈspɔːrts ˌbɔːl/",
+    "band_score": "7.5",
+    "collocations": [
+      "team sports cohesion (tinh thần gắn kết đồng đội)",
+      "aerobic physical conditioning (rèn luyện thể lực hiếu khí)"
+    ],
+    "idioms": "The ball is in your court (Quyết định tùy thuộc vào bạn)",
+    "speaking_part1_example": "Participating in collective athletic sphere disciplines instills discipline and strategic coordination.",
+    "speaking_part1_translation": "Tham gia các môn thể thao đồng đội với bóng giúp rèn luyện tính kỷ luật và sự phối hợp chiến thuật."
+  },
+  {
+    "label": "kite",
+    "common_word": "Kite",
+    "vietnamese_meaning": "Con diều",
+    "academic_word": "Tethered aerodynamic airfoil",
+    "ipa": "/kaɪt/",
+    "band_score": "8.0",
+    "collocations": [
+      "wind-powered propulsion (lực đẩy của gió)",
+      "traditional folklore pastime (trò chơi dân gian truyền thống)"
+    ],
+    "idioms": "High as a kite (Rất phấn khích / Bay bổng)",
+    "speaking_part1_example": "Flying tethered airfoils remains a nostalgic pastime that reconnects families with outdoor environments.",
+    "speaking_part1_translation": "Thả diều vẫn là một thú tiêu khiển giàu hoài niệm giúp các gia đình gắn kết lại với thiên nhiên ngoài trời."
+  },
+  {
+    "label": "baseball bat",
+    "common_word": "Baseball bat",
+    "vietnamese_meaning": "Gậy bóng chày",
+    "academic_word": "Timber hitting club / Striking bat",
+    "ipa": "/ˈbeɪs.bɔːl ˌbæt/",
+    "band_score": "7.0",
+    "collocations": [
+      "impact velocity (vận tốc va chạm)",
+      "hand-eye coordination (phối hợp tay và mắt)"
+    ],
+    "idioms": "Right off the bat (Ngay lập tức, từ ban đầu)",
+    "speaking_part1_example": "Swinging a striking club accurately requires fine-tuned neuromuscular coordination and extensive drilling.",
+    "speaking_part1_translation": "Vung gậy đánh bóng một cách chuẩn xác đòi hỏi sự phối hợp thần kinh - cơ tinh tế và khổ luyện nhiều lần."
+  },
+  {
+    "label": "baseball glove",
+    "common_word": "Baseball glove",
+    "vietnamese_meaning": "Găng tay bóng chày",
+    "academic_word": "Padded leather mitt",
+    "ipa": "/ˈbeɪs.bɔːl ˌɡlʌv/",
+    "band_score": "7.5",
+    "collocations": [
+      "kinetic shock absorption (hấp thụ chấn động động năng)",
+      "protective athletic gear (đồ bảo hộ thể thao)"
+    ],
+    "idioms": "Fits like a glove (Vừa như in, hoàn toàn phù hợp)",
+    "speaking_part1_example": "Padded mitts minimize the risk of hand fractures caused by high-velocity impacts in athletics.",
+    "speaking_part1_translation": "Găng tay đệm dày giúp giảm thiểu nguy cơ gãy xương tay do tác động ở vận tốc cao trong thể thao."
+  },
+  {
+    "label": "skateboard",
+    "common_word": "Skateboard",
+    "vietnamese_meaning": "Ván trượt bánh",
+    "academic_word": "Wheeled board / Urban riding deck",
+    "ipa": "/ˈskeɪt.bɔːrd/",
+    "band_score": "7.0",
+    "collocations": [
+      "subcultural manifestation (biểu hiện của tiểu văn hóa)",
+      "urban recreational sport (thể thao đường phố đô thị)"
+    ],
+    "idioms": "Skate on thin ice (Hành động mạo hiểm, liều lĩnh)",
+    "speaking_part1_example": "Urban wheeled boards have evolved from recreational pastimes into recognized competitive Olympic sports.",
+    "speaking_part1_translation": "Ván trượt đường phố đã phát triển từ trò tiêu khiển thành môn thể thao thi đấu Olympic được công nhận."
+  },
+  {
+    "label": "surfboard",
+    "common_word": "Surfboard",
+    "vietnamese_meaning": "Ván lướt sóng",
+    "academic_word": "Aquatic wave-riding plank",
+    "ipa": "/ˈsɜːrf.bɔːrd/",
+    "band_score": "7.5",
+    "collocations": [
+      "hydrodynamic flotation (khả năng nổi thủy động học)",
+      "coastal ecotourism (du lịch sinh thái bờ biển)"
+    ],
+    "idioms": "Ride the wave (Bắt kịp xu thế, tận dụng thời cơ thuận lợi)",
+    "speaking_part1_example": "Surfing upon specialized hydrodynamic planks instills respect for marine ecological phenomena.",
+    "speaking_part1_translation": "Lướt sóng trên những chiếc ván thủy động học chuyên dụng giúp con người biết tôn trọng các hiện tượng đại dương."
+  },
+  {
+    "label": "tennis racket",
+    "common_word": "Tennis racket",
+    "vietnamese_meaning": "Vợt tennis",
+    "academic_word": "Stringed racquet / Athletic striking frame",
+    "ipa": "/ˈten.ɪs ˌræk.ɪt/",
+    "band_score": "7.5",
+    "collocations": [
+      "carbon-fiber composite frame (khung sợi carbon tổng hợp)",
+      "torsional stability (độ ổn định chống vặn xoắn)"
+    ],
+    "idioms": "Serve someone right (Đáng đời, chịu hậu quả thích đáng)",
+    "speaking_part1_example": "Modern stringed racquets manufactured from lightweight carbon composites significantly diminish player fatigue.",
+    "speaking_part1_translation": "Vợt lưới hiện đại làm từ sợi carbon tổng hợp siêu nhẹ giúp giảm thiểu đáng kể tình trạng kiệt sức của vận động viên."
+  },
+  {
+    "label": "bottle",
+    "common_word": "Bottle",
+    "vietnamese_meaning": "Chai, bình nước",
+    "academic_word": "Beverage flask / Fluid receptacle",
+    "ipa": "/ˈbɑː.t̬əl/",
+    "band_score": "8.0",
+    "collocations": [
+      "reusable beverage receptacle (bình chứa nước tái sử dụng)",
+      "single-use plastic reduction (giảm rác thải nhựa dùng một lần)"
+    ],
+    "idioms": "Bottle up feelings (Kìm nén, giấu kín cảm xúc)",
+    "speaking_part1_example": "Carrying reusable fluid receptacles substantially curtails municipal plastic contamination.",
+    "speaking_part1_translation": "Mang theo bình đựng nước tái sử dụng giúp giảm thiểu đáng kể tình trạng ô nhiễm rác nhựa đô thị."
+  },
+  {
+    "label": "wine glass",
+    "common_word": "Wine glass",
+    "vietnamese_meaning": "Ly rượu vang",
+    "academic_word": "Stemmed goblet / Crystal chalice",
+    "ipa": "/ˈwaɪn ˌɡlæs/",
+    "band_score": "8.5",
+    "collocations": [
+      "culinary connoisseurship (nghệ thuật thưởng thức ẩm thực)",
+      "delicate crystal stem (chân ly pha lê thanh mảnh)"
+    ],
+    "idioms": "See the glass half full (Lạc quan nhìn vào mặt tích cực)",
+    "speaking_part1_example": "Serving vintage vintages in stemmed goblets aerates the liquid, enriching sensory degustation.",
+    "speaking_part1_translation": "Thưởng thức rượu hảo hạng trong ly có chân giúp rượu tiếp xúc với không khí, nâng tầm trải nghiệm vị giác."
+  },
+  {
+    "label": "cup",
+    "common_word": "Cup",
+    "vietnamese_meaning": "Cốc, tách nước",
+    "academic_word": "Ceramic mug / Drinking vessel",
+    "ipa": "/kʌp/",
+    "band_score": "7.0",
+    "collocations": [
+      "thermal insulation vessel (cốc giữ nhiệt)",
+      "disposable paper cup (cốc giấy dùng một lần)"
+    ],
+    "idioms": "Not my cup of tea (Không phải sở thích hay gu của tôi)",
+    "speaking_part1_example": "I commence each morning with coffee served in a handcrafted ceramic drinking vessel.",
+    "speaking_part1_translation": "Tôi bắt đầu mỗi buổi sáng với một tách cà phê đựng trong chiếc cốc gốm thủ công xinh xắn."
+  },
+  {
+    "label": "fork",
+    "common_word": "Fork",
+    "vietnamese_meaning": "Cái nĩa",
+    "academic_word": "Pronged dining utensil",
+    "ipa": "/fɔːrk/",
+    "band_score": "8.0",
+    "collocations": [
+      "tableware etiquette (phép lịch sự trên bàn ăn)",
+      "stainless steel cutlery (dụng cụ ăn bằng thép không gỉ)"
+    ],
+    "idioms": "Fork over (Miễn cưỡng chi tiền)",
+    "speaking_part1_example": "Mastery of pronged dining utensils is a quintessential element of Western diplomatic banqueting etiquette.",
+    "speaking_part1_translation": "Việc sử dụng thành thạo dao nĩa là yếu tố chuẩn mực trong nghi thức tiệc chiêu đãi ngoại giao phương Tây."
+  },
+  {
+    "label": "knife",
+    "common_word": "Knife",
+    "vietnamese_meaning": "Con dao",
+    "academic_word": "Cutting blade / Edged implement",
+    "ipa": "/naɪf/",
+    "band_score": "7.5",
+    "collocations": [
+      "culinary cutting implement (dụng cụ thái gọt nhà bếp)",
+      "razor-sharp edge (lưỡi dao sắc bén)"
+    ],
+    "idioms": "On a knife edge (Trong tình thế vô cùng bấp bênh)",
+    "speaking_part1_example": "Professional chefs maintain razor-sharp cutting implements to guarantee precision during food preparation.",
+    "speaking_part1_translation": "Các đầu bếp chuyên nghiệp luôn mài sắc dụng cụ cắt gọt để đảm bảo độ chuẩn xác trong khâu sơ chế."
+  },
+  {
+    "label": "spoon",
+    "common_word": "Spoon",
+    "vietnamese_meaning": "Cái thìa, muỗng",
+    "academic_word": "Concave cutlery implement",
+    "ipa": "/spuːn/",
+    "band_score": "7.5",
+    "collocations": [
+      "liquid nourishment consumption (việc dùng thức ăn lỏng)",
+      "silverware collection (bộ đồ ăn bằng bạc)"
+    ],
+    "idioms": "Born with a silver spoon in one's mouth (Sinh ra ngậm thìa vàng, ngậm thìa bạc)",
+    "speaking_part1_example": "Concave dining implements facilitate the hygienic consumption of broths and liquid delicacies.",
+    "speaking_part1_translation": "Các dụng cụ ăn dạng lòng thìa lõm giúp việc thưởng thức canh và các món nước trở nên lịch sự và vệ sinh."
+  },
+  {
+    "label": "bowl",
+    "common_word": "Bowl",
+    "vietnamese_meaning": "Cái bát, tô",
+    "academic_word": "Hemispherical culinary basin",
+    "ipa": "/boʊl/",
+    "band_score": "8.0",
+    "collocations": [
+      "communal food vessel (bát đựng đồ ăn chung)",
+      "porcelain dinnerware (đồ dùng bàn ăn bằng sứ)"
+    ],
+    "idioms": "Bowl someone over (Làm ai đó ngạc nhiên tột độ)",
+    "speaking_part1_example": "In East Asian dining traditions, holding one's ceramic bowl close during meals signifies cultural respect.",
+    "speaking_part1_translation": "Trong văn hóa ẩm thực Đông Á, việc nâng bát cơm khi ăn thể hiện phép lịch sự và nét đẹp truyền thống."
+  },
+  {
+    "label": "banana",
+    "common_word": "Banana",
+    "vietnamese_meaning": "Quả chuối",
+    "academic_word": "Potassium-rich tropical fruit",
+    "ipa": "/bəˈnæn.ə/",
+    "band_score": "7.0",
+    "collocations": [
+      "nutrient-dense produce (nông sản giàu dinh dưỡng)",
+      "potassium supplement (nguồn bổ sung kali)"
+    ],
+    "idioms": "Go bananas (Trở nên phát điên hoặc cực kỳ hào hứng)",
+    "speaking_part1_example": "Athletes consistently ingest potassium-rich tropical fruits to forestall muscle cramping during tournaments.",
+    "speaking_part1_translation": "Vận động viên thường xuyên ăn chuối giàu kali để ngăn ngừa tình trạng chuột rút cơ bắp trong thi đấu."
+  },
+  {
+    "label": "apple",
+    "common_word": "Apple",
+    "vietnamese_meaning": "Quả táo",
+    "academic_word": "Pomaceous orchard produce",
+    "ipa": "/ˈæp.əl/",
+    "band_score": "8.0",
+    "collocations": [
+      "antioxidant-laden fruit (trái cây giàu chất chống oxy hóa)",
+      "organic orchard cultivation (trồng trọt vườn quả hữu cơ)"
+    ],
+    "idioms": "Apple of someone's eye (Người được ai đó yêu quý nhất)",
+    "speaking_part1_example": "Daily consumption of pomaceous fruits bolsters cardiovascular longevity and enhances digestive well-being.",
+    "speaking_part1_translation": "Thói quen ăn táo mỗi ngày giúp củng cố sức khỏe tim mạch và nâng cao chức năng tiêu hóa."
+  },
+  {
+    "label": "sandwich",
+    "common_word": "Sandwich",
+    "vietnamese_meaning": "Bánh mì kẹp",
+    "academic_word": "Layered bread snack / Portable meal",
+    "ipa": "/ˈsæn.wɪtʃ/",
+    "band_score": "7.0",
+    "collocations": [
+      "wholesome quick meal (bữa ăn nhanh lành mạnh)",
+      "artisanal whole-grain bread (bánh mì nguyên cám thủ công)"
+    ],
+    "idioms": "Sandwiched between (Bị kẹt ở giữa hai thứ/hai người)",
+    "speaking_part1_example": "Portable layered bread snacks serve as the ubiquitous lunch alternative for time-constrained metropolitan executives.",
+    "speaking_part1_translation": "Bánh mì kẹp tiện lợi là sự lựa chọn bữa trưa phổ biến cho những nhân viên văn phòng bận rộn tại đô thị."
+  },
+  {
+    "label": "orange",
+    "common_word": "Orange",
+    "vietnamese_meaning": "Quả cam",
+    "academic_word": "Citrus fruit / Vitamin-C reservoir",
+    "ipa": "/ˈɔːr.ɪndʒ/",
+    "band_score": "7.5",
+    "collocations": [
+      "immune-boosting citrus (cam quýt tăng cường miễn dịch)",
+      "freshly squeezed juice (nước ép tươi nguyên chất)"
+    ],
+    "idioms": "Apples and oranges (Hai sự vật hoàn toàn khác biệt, khập khiễng)",
+    "speaking_part1_example": "Regular ingestion of citrus fruits fortifies the human immune apparatus against seasonal respiratory ailments.",
+    "speaking_part1_translation": "Thường xuyên bổ sung các loại quả họ cam quýt giúp củng cố hệ miễn dịch chống lại các bệnh đường hô hấp theo mùa."
+  },
+  {
+    "label": "broccoli",
+    "common_word": "Broccoli",
+    "vietnamese_meaning": "Súp lơ xanh, bông cải xanh",
+    "academic_word": "Cruciferous vegetable",
+    "ipa": "/ˈbrɑː.kəl.i/",
+    "band_score": "8.0",
+    "collocations": [
+      "anticarcinogenic compounds (hợp chất chống ung thư)",
+      "fiber-rich dietary greens (rau xanh giàu chất xơ)"
+    ],
+    "idioms": "Eat your greens (Hãy ăn nhiều rau xanh để khỏe mạnh)",
+    "speaking_part1_example": "Nutritionists universally endorse cruciferous vegetables due to their profound anticarcinogenic properties.",
+    "speaking_part1_translation": "Các chuyên gia dinh dưỡng luôn khuyến nghị ăn súp lơ xanh vì đặc tính phòng chống ung thư vượt trội của nó."
+  },
+  {
+    "label": "carrot",
+    "common_word": "Carrot",
+    "vietnamese_meaning": "Củ cà rốt",
+    "academic_word": "Beta-carotene rich root vegetable",
+    "ipa": "/ˈkær.ət/",
+    "band_score": "7.5",
+    "collocations": [
+      "ocular health enhancement (tăng cường thị lực cho mắt)",
+      "subterranean taproot (củ rễ cái dưới lòng đất)"
+    ],
+    "idioms": "Carrot and stick (Chính sách vừa đe dọa vừa khen thưởng)",
+    "speaking_part1_example": "Root vegetables abundant in beta-carotene are acclaimed for promoting optimal ocular acuity.",
+    "speaking_part1_translation": "Các loại củ giàu beta-carotene được ca ngợi nhờ khả năng duy trì độ sáng khỏe tối ưu cho đôi mắt."
+  },
+  {
+    "label": "hot dog",
+    "common_word": "Hot dog",
+    "vietnamese_meaning": "Bánh mì kẹp xúc xích",
+    "academic_word": "Processed frankfurter sandwich",
+    "ipa": "/ˈhɑːt ˌdɔːɡ/",
+    "band_score": "7.0",
+    "collocations": [
+      "fast-food dietary habit (thói quen ăn đồ ăn nhanh)",
+      "high-sodium processed snack (món ăn vặt chế biến chứa nhiều muối)"
+    ],
+    "idioms": "Hot dogging (Thích thể hiện, làm màu phô trương)",
+    "speaking_part1_example": "Excessive intake of processed frankfurter sandwiches is correlated with heightened cardiovascular vulnerability.",
+    "speaking_part1_translation": "Tiêu thụ quá nhiều xúc xích chế biến sẵn có liên quan trực tiếp đến sự gia tăng nguy cơ mắc bệnh tim mạch."
+  },
+  {
+    "label": "pizza",
+    "common_word": "Pizza",
+    "vietnamese_meaning": "Bánh pizza",
+    "academic_word": "Baked flatbread with savoury toppings",
+    "ipa": "/ˈpiːt.sə/",
+    "band_score": "7.5",
+    "collocations": [
+      "culinary globalization (sự toàn cầu hóa ẩm thực)",
+      "wood-fired oven baking (nướng bằng lò củi truyền thống)"
+    ],
+    "idioms": "A slice of the pie (Một phần lợi nhuận hoặc quyền lợi)",
+    "speaking_part1_example": "The worldwide ubiquity of pizza exemplifies modern culinary fusion and cross-border gastronomic trends.",
+    "speaking_part1_translation": "Sự phổ biến khắp thế giới của món pizza là minh chứng tiêu biểu cho sự giao thoa ẩm thực hiện đại."
+  },
+  {
+    "label": "donut",
+    "common_word": "Donut",
+    "vietnamese_meaning": "Bánh vòng rán ngọt",
+    "academic_word": "Glazed confection / Toroidal pastry",
+    "ipa": "/ˈdoʊ.nʌt/",
+    "band_score": "8.0",
+    "collocations": [
+      "sugar-dense indulgence (món ăn ngọt chứa nhiều calo)",
+      "high glycemic index (chỉ số đường huyết cao)"
+    ],
+    "idioms": "Money to burn (Có thừa tiền để tiêu hoang)",
+    "speaking_part1_example": "Limiting the ingestion of sugar-dense glazed pastries is imperative to forestall childhood obesity.",
+    "speaking_part1_translation": "Hạn chế ăn các loại bánh rán tẩm đường là điều cấp thiết để ngăn ngừa béo phì ở trẻ nhỏ."
+  },
+  {
+    "label": "cake",
+    "common_word": "Cake",
+    "vietnamese_meaning": "Bánh ngọt, bánh kem",
+    "academic_word": "Celebratory confection / Gateau",
+    "ipa": "/keɪk/",
+    "band_score": "7.5",
+    "collocations": [
+      "culinary craftsmanship (tay nghề làm bánh tinh xảo)",
+      "festive centerpiece (tâm điểm của buổi tiệc kỷ niệm)"
+    ],
+    "idioms": "A piece of cake (Dễ như ăn bánh / Cực kỳ dễ dàng)",
+    "speaking_part1_example": "Artisanal confections frequently function as the focal point during jubilees and matrimonial ceremonies.",
+    "speaking_part1_translation": "Những chiếc bánh ngọt nghệ thuật thường là điểm nhấn trung tâm trong các bữa tiệc kỷ niệm và đám cưới."
+  },
+  {
+    "label": "chair",
+    "common_word": "Chair",
+    "vietnamese_meaning": "Cái ghế",
+    "academic_word": "Ergonomic seating furniture",
+    "ipa": "/tʃer/",
+    "band_score": "8.0",
+    "collocations": [
+      "lumbar spinal support (hỗ trợ cột sống thắt lưng)",
+      "sedentary office environment (môi trường văn phòng ngồi nhiều)"
+    ],
+    "idioms": "Chair a meeting (Chủ trì, điều hành một cuộc họp)",
+    "speaking_part1_example": "Investing in ergonomic seating furniture remedies postural deficiencies generated by sedentary desk work.",
+    "speaking_part1_translation": "Đầu tư vào ghế công thái học giúp khắc phục tật sai tư thế do thói quen ngồi làm việc tĩnh tại cả ngày."
+  },
+  {
+    "label": "sofa",
+    "common_word": "Sofa",
+    "vietnamese_meaning": "Ghế sô-pha, ghế dài",
+    "academic_word": "Plush settee / Upholstered divan",
+    "ipa": "/ˈsoʊ.fə/",
+    "band_score": "8.0",
+    "collocations": [
+      "living quarters centerpiece (tâm điểm của phòng khách)",
+      "plush cushioning (lớp đệm mút êm ái)"
+    ],
+    "idioms": "Couch potato (Người lười biếng, suốt ngày nằm xem tivi)",
+    "speaking_part1_example": "An upholstered settee serves not only as lounging furniture but also as the communal hearth of modern residences.",
+    "speaking_part1_translation": "Chiếc ghế sofa bọc nệm không chỉ là nơi thư giãn mà còn là góc sinh hoạt gắn kết các thành viên trong gia đình."
+  },
+  {
+    "label": "pottedplant",
+    "common_word": "Potted plant",
+    "vietnamese_meaning": "Chậu cây cảnh",
+    "academic_word": "Botanical indoor vegetation / Flora",
+    "ipa": "/ˈpɑː.t̬ɪd ˌplænt/",
+    "band_score": "8.0",
+    "collocations": [
+      "indoor air purification (thanh lọc không khí trong nhà)",
+      "biophilic architectural design (kiến trúc đưa thiên nhiên vào nhà)"
+    ],
+    "idioms": "Grow on someone (Dần dần khiến ai đó yêu thích)",
+    "speaking_part1_example": "Nurturing indoor flora enhances ambient cognitive focus and attenuates psychological tension.",
+    "speaking_part1_translation": "Chăm sóc chậu cây cảnh trong nhà giúp tăng khả năng tập trung tinh thần và xoa dịu áp lực tâm lý."
+  },
+  {
+    "label": "bed",
+    "common_word": "Bed",
+    "vietnamese_meaning": "Cái giường",
+    "academic_word": "Sleeping berth / Bedstead",
+    "ipa": "/bed/",
+    "band_score": "7.5",
+    "collocations": [
+      "restorative sleep hygiene (thói quen ngủ phục hồi sức khỏe)",
+      "orthopedic mattress (nệm nâng đỡ xương khớp)"
+    ],
+    "idioms": "Make your bed and lie in it (Tự làm tự chịu)",
+    "speaking_part1_example": "A comfortable sleeping berth is foundational to maintaining peak physical and neurological performance.",
+    "speaking_part1_translation": "Một chiếc giường ngủ êm ái là nền tảng để duy trì phong độ thể chất và trí tuệ đỉnh cao mỗi ngày."
+  },
+  {
+    "label": "diningtable",
+    "common_word": "Dining table",
+    "vietnamese_meaning": "Bàn ăn",
+    "academic_word": "Communal dining board / Banqueting table",
+    "ipa": "/ˈdaɪ.nɪŋ ˌteɪ.bəl/",
+    "band_score": "7.5",
+    "collocations": [
+      "family cohesion ritual (nghi thức gắn kết gia đình)",
+      "table hospitality (lòng hiếu khách trên bàn tiệc)"
+    ],
+    "idioms": "Bring to the table (Mang lại giá trị hoặc đóng góp hữu ích)",
+    "speaking_part1_example": "Gathering around the communal dining board reinforces familial ties amidst fast-paced modern lifestyles.",
+    "speaking_part1_translation": "Quây quần bên bàn ăn gia đình giúp thắt chặt tình thân giữa nhịp sống hiện đại hối hả."
+  },
+  {
+    "label": "toilet",
+    "common_word": "Toilet",
+    "vietnamese_meaning": "Nhà vệ sinh, bồn cầu",
+    "academic_word": "Sanitary lavatory fixture",
+    "ipa": "/ˈtɔɪ.lət/",
+    "band_score": "8.0",
+    "collocations": [
+      "municipal sanitation facilities (tiện nghi vệ sinh đô thị)",
+      "hygienic waste disposal (xử lý chất thải hợp vệ sinh)"
+    ],
+    "idioms": "Down the drain / toilet (Đổ sông đổ biển, lãng phí vô ích)",
+    "speaking_part1_example": "Equitable access to modern lavatory fixtures remains a fundamental human development indicator globally.",
+    "speaking_part1_translation": "Quyền tiếp cận bình đẳng với các thiết bị vệ sinh hiện đại vẫn là thước đo phát triển con người cốt lõi trên toàn cầu."
+  },
+  {
+    "label": "tvmonitor",
+    "common_word": "TV / Monitor",
+    "vietnamese_meaning": "Màn hình tivi / Màn hình máy tính",
+    "academic_word": "Visual display terminal / Electronic monitor",
+    "ipa": "/ˌtiːˈviː/",
+    "band_score": "7.5",
+    "collocations": [
+      "excessive screen exposure (tiếp xúc màn hình quá mức)",
+      "high-definition visual output (hình ảnh sắc nét độ phân giải cao)"
+    ],
+    "idioms": "Tune in (Lắng nghe, chú ý theo dõi)",
+    "speaking_part1_example": "Prolonged exposure to visual display terminals has triggered widespread digital eye strain among modern knowledge workers.",
+    "speaking_part1_translation": "Việc nhìn màn hình điện tử liên tục trong thời gian dài đã gây ra tình trạng mỏi mắt kỹ thuật số phổ biến ở người làm văn phòng."
+  },
+  {
+    "label": "laptop",
+    "common_word": "Laptop",
+    "vietnamese_meaning": "Máy tính xách tay",
+    "academic_word": "Portable workstation / Computing apparatus",
+    "ipa": "/ˈlæp.tɑːp/",
+    "band_score": "8.0",
+    "collocations": [
+      "ubiquitous digital tool (công cụ kỹ thuật số phổ biến khắp nơi)",
+      "telecommuting productivity (năng suất làm việc từ xa)"
+    ],
+    "idioms": "Boot up (Khởi động máy / Chuẩn bị bắt đầu)",
+    "speaking_part1_example": "High-performance portable workstations have facilitated the paradigm shift toward decentralized remote work.",
+    "speaking_part1_translation": "Những chiếc máy tính xách tay hiệu năng cao đã thúc đẩy bước chuyển dịch mô hình làm việc từ xa linh hoạt."
+  },
+  {
+    "label": "mouse",
+    "common_word": "Mouse",
+    "vietnamese_meaning": "Chuột máy tính",
+    "academic_word": "Optical pointing peripheral",
+    "ipa": "/maʊs/",
+    "band_score": "8.0",
+    "collocations": [
+      "graphical user interface navigation (điều hướng giao diện người dùng)",
+      "ergonomic wrist contour (thiết kế ôm sát bảo vệ cổ tay)"
+    ],
+    "idioms": "Quiet as a mouse (Cực kỳ im lặng, nín thin thít)",
+    "speaking_part1_example": "Advanced optical pointing peripherals offer tactile precision indispensable for digital architects and designers.",
+    "speaking_part1_translation": "Chuột quang cao cấp mang lại sự chính xác xúc giác không thể thiếu cho các kiến trúc sư và nhà thiết kế đồ họa."
+  },
+  {
+    "label": "remote",
+    "common_word": "Remote",
+    "vietnamese_meaning": "Điều khiển từ xa",
+    "academic_word": "Infrared control transducer / Controller",
+    "ipa": "/rɪˈmoʊt/",
+    "band_score": "7.5",
+    "collocations": [
+      "wireless appliance control (điều khiển thiết bị không dây)",
+      "smart-home integration (tích hợp nhà thông minh)"
+    ],
+    "idioms": "Remote possibility (Khả năng rất mong manh)",
+    "speaking_part1_example": "Modern handheld controllers are gradually being superseded by intuitive voice-activated home automation.",
+    "speaking_part1_translation": "Các bộ điều khiển cầm tay đang dần được thay thế bởi hệ thống nhà thông minh kích hoạt bằng giọng nói."
+  },
+  {
+    "label": "keyboard",
+    "common_word": "Keyboard",
+    "vietnamese_meaning": "Bàn phím máy tính",
+    "academic_word": "Alphanumeric input console",
+    "ipa": "/ˈkiː.bɔːrd/",
+    "band_score": "8.0",
+    "collocations": [
+      "tactile typing feedback (phản hồi xúc giác khi gõ phím)",
+      "keystroke efficiency (tốc độ gõ phím chuẩn xác)"
+    ],
+    "idioms": "Key to success (Chìa khóa dẫn đến thành công)",
+    "speaking_part1_example": "An alphanumeric input console with mechanical switches bolsters transcription speed and mitigates finger strain.",
+    "speaking_part1_translation": "Bàn phím cơ với phản hồi xúc giác tốt giúp nâng cao tốc độ soạn thảo văn bản và giảm bớt mỏi tay."
+  },
+  {
+    "label": "cell phone",
+    "common_word": "Cell phone",
+    "vietnamese_meaning": "Điện thoại di động",
+    "academic_word": "Handheld telecommunication device / Smartphone",
+    "ipa": "/ˈsel ˌfoʊn/",
+    "band_score": "7.5",
+    "collocations": [
+      "ubiquitous connectivity (kết nối mạng mọi lúc mọi nơi)",
+      "information overload (sự quá tải thông tin)"
+    ],
+    "idioms": "Call the shots (Chỉ huy, đưa ra quyết định sau cùng)",
+    "speaking_part1_example": "Handheld telecommunication gadgets have democratized knowledge dissemination yet heightened social seclusion.",
+    "speaking_part1_translation": "Điện thoại thông minh đã bình dân hóa việc tiếp cận tri thức nhưng cũng làm gia tăng sự xa cách trong giao tiếp xã hội."
+  },
+  {
+    "label": "microwave",
+    "common_word": "Microwave",
+    "vietnamese_meaning": "Lò vi sóng",
+    "academic_word": "Electromagnetic reheating appliance",
+    "ipa": "/ˈmaɪ.kroʊ.weɪv/",
+    "band_score": "7.5",
+    "collocations": [
+      "rapid meal preparation (chuẩn bị bữa ăn nhanh chóng)",
+      "domestic efficiency (sự tiện lợi trong sinh hoạt gia đình)"
+    ],
+    "idioms": "In the pipeline (Đang được lên kế hoạch / sắp ra mắt)",
+    "speaking_part1_example": "Electromagnetic reheating appliances have revolutionized domestic efficiency for households with fast-paced routines.",
+    "speaking_part1_translation": "Lò vi sóng đã cách mạng hóa sự tiện lợi trong gia đình đối với những người có nhịp sống bận rộn."
+  },
+  {
+    "label": "oven",
+    "common_word": "Oven",
+    "vietnamese_meaning": "Lò nướng",
+    "academic_word": "Thermal baking chamber / Kiln",
+    "ipa": "/ˈʌv.ən/",
+    "band_score": "7.5",
+    "collocations": [
+      "convection heat circulation (luân chuyển nhiệt đối lưu)",
+      "gastronomic roasting (nghệ thuật quay nướng món ăn)"
+    ],
+    "idioms": "Bun in the oven (Đang mang thai)",
+    "speaking_part1_example": "Utilizing a convection thermal baking chamber guarantees homogeneous roasting throughout poultry dishes.",
+    "speaking_part1_translation": "Sử dụng lò nướng đối lưu đảm bảo nhiệt độ đồng đều giúp món nướng chín vàng và thơm ngon."
+  },
+  {
+    "label": "toaster",
+    "common_word": "Toaster",
+    "vietnamese_meaning": "Máy nướng bánh mì",
+    "academic_word": "Electric radiant bread crisper",
+    "ipa": "/ˈtoʊ.stɚ/",
+    "band_score": "7.0",
+    "collocations": [
+      "breakfast culinary utility (tiện ích chuẩn bị bữa sáng)",
+      "radiant heating element (thanh nhiệt hồng ngoại)"
+    ],
+    "idioms": "Warm as toast (Ấm áp, dễ chịu)",
+    "speaking_part1_example": "An electric bread crisper streamlines morning routines by expediting the preparation of wholesome whole-wheat toast.",
+    "speaking_part1_translation": "Máy nướng bánh mì giúp bữa sáng diễn ra nhanh chóng với những lát bánh mì ngũ cốc giòn rụm và giàu dinh dưỡng."
+  },
+  {
+    "label": "sink",
+    "common_word": "Sink",
+    "vietnamese_meaning": "Bồn rửa chén / Bồn rửa mặt",
+    "academic_word": "Sanitary drainage basin",
+    "ipa": "/sɪŋk/",
+    "band_score": "7.5",
+    "collocations": [
+      "hygienic washing fixture (thiết bị rửa hợp vệ sinh)",
+      "running potable water (nước sạch sinh hoạt)"
+    ],
+    "idioms": "Sink or swim (Tự lực cánh sinh: thành công hoặc chấp nhận thất bại)",
+    "speaking_part1_example": "Maintaining pristine sanitary drainage basins in food prep zones prevents pathogenic bacterial propagation.",
+    "speaking_part1_translation": "Giữ gìn bồn rửa sạch sẽ trong khu vực nấu ăn giúp ngăn chặn sự sinh sôi của các vi khuẩn gây bệnh."
+  },
+  {
+    "label": "refrigerator",
+    "common_word": "Refrigerator",
+    "vietnamese_meaning": "Tủ lạnh",
+    "academic_word": "Cold storage appliance / Cryogenic larder",
+    "ipa": "/rɪˈfrɪdʒ.ə.reɪ.t̬ɚ/",
+    "band_score": "8.0",
+    "collocations": [
+      "perishable food preservation (bảo quản thực phẩm tươi sống)",
+      "energy-efficient refrigeration (công nghệ làm lạnh tiết kiệm điện)"
+    ],
+    "idioms": "On ice (Tạm dừng, hoãn lại)",
+    "speaking_part1_example": "Modern cold storage appliances drastically mitigate food squandering by arresting bacterial decay.",
+    "speaking_part1_translation": "Tủ lạnh bảo quản thực phẩm hiện đại giúp giảm đáng kể sự lãng phí đồ ăn bằng cách kìm hãm sự phân hủy của vi khuẩn."
+  },
+  {
+    "label": "book",
+    "common_word": "Book",
+    "vietnamese_meaning": "Cuốn sách",
+    "academic_word": "Literary publication / Tome",
+    "ipa": "/bʊk/",
+    "band_score": "8.0",
+    "collocations": [
+      "intellectual enrichment (làm giàu vốn tri thức)",
+      "academic discourse (luận thuyết học thuật)"
+    ],
+    "idioms": "Judge a book by its cover (Nhìn mặt mà bắt hình dong)",
+    "speaking_part1_example": "Immersing oneself in profound literary tomes broadens one's worldview and cultivates analytical thinking.",
+    "speaking_part1_translation": "Đắm mình vào những cuốn sách học thuật uyên bác giúp mở rộng thế giới quan và trau dồi tư duy phản biện."
+  },
+  {
+    "label": "clock",
+    "common_word": "Clock",
+    "vietnamese_meaning": "Đồng hồ",
+    "academic_word": "Chronometer / Timekeeping instrument",
+    "ipa": "/klɑːk/",
+    "band_score": "8.0",
+    "collocations": [
+      "punctual precision (độ chính xác đúng giờ)",
+      "temporal awareness (nhận thức về thời gian)"
+    ],
+    "idioms": "Against the clock (Chạy đua với thời gian)",
+    "speaking_part1_example": "A reliable timekeeping instrument instills an acute awareness of temporal management in busy professionals.",
+    "speaking_part1_translation": "Một chiếc đồng hồ đáng tin cậy giúp nâng cao nhận thức quản lý thời gian cho những người bận rộn."
+  },
+  {
+    "label": "vase",
+    "common_word": "Vase",
+    "vietnamese_meaning": "Bình hoa, lọ hoa",
+    "academic_word": "Ornamental floral urn / Receptacle",
+    "ipa": "/veɪs/",
+    "band_score": "8.0",
+    "collocations": [
+      "aesthetic interior accent (điểm nhấn thẩm mỹ nội thất)",
+      "porcelain craftsmanship (nghệ thuật gốm sứ tinh xảo)"
+    ],
+    "idioms": "Fresh as a daisy (Tươi như hoa, tràn đầy năng lượng)",
+    "speaking_part1_example": "Adorning living spaces with handcrafted floral urns imbues the domestic atmosphere with tranquility.",
+    "speaking_part1_translation": "Trang trí nhà ở bằng những bình hoa thủ công mang lại vẻ đẹp thanh bình và trang nhã cho không gian sống."
+  },
+  {
+    "label": "scissors",
+    "common_word": "Scissors",
+    "vietnamese_meaning": "Cái kéo",
+    "academic_word": "Precision cutting shears / Shearing instrument",
+    "ipa": "/ˈsɪz.ɚz/",
+    "band_score": "8.0",
+    "collocations": [
+      "surgical precision (độ chính xác chuẩn phẫu thuật)",
+      "ergonomic handle grip (cán cầm công thái học)"
+    ],
+    "idioms": "Cut corners (Đi đường tắt / Đốt cháy giai đoạn cẩu thả)",
+    "speaking_part1_example": "Sharp cutting shears are essential implements for sartorial tailors and surgical practitioners alike.",
+    "speaking_part1_translation": "Kéo cắt sắc bén là dụng cụ thiết yếu đối với thợ may lành nghề cũng như các chuyên gia phẫu thuật."
+  },
+  {
+    "label": "teddy bear",
+    "common_word": "Teddy bear",
+    "vietnamese_meaning": "Gấu bông",
+    "academic_word": "Plush comfort plaything / Stuffed mascot",
+    "ipa": "/ˈted.i ˌber/",
+    "band_score": "7.5",
+    "collocations": [
+      "childhood sentimental heirloom (kỷ vật tuổi thơ giàu cảm xúc)",
+      "psychological security provider (vật mang lại cảm giác an tâm)"
+    ],
+    "idioms": "Play with kid gloves (Đối xử nhẹ nhàng, cẩn trọng hết mức)",
+    "speaking_part1_example": "Plush comfort playthings bestow profound psychological reassurance upon infants during bedtime.",
+    "speaking_part1_translation": "Những chú gấu bông mềm mại mang lại cảm giác an tâm và giấc ngủ ngon lành cho trẻ nhỏ."
+  },
+  {
+    "label": "hair drier",
+    "common_word": "Hair drier",
+    "vietnamese_meaning": "Máy sấy tóc",
+    "academic_word": "Thermo-electric blow dryer",
+    "ipa": "/ˈher ˌdraɪ.ɚ/",
+    "band_score": "7.5",
+    "collocations": [
+      "ionic hair care technology (công nghệ ion chăm sóc tóc)",
+      "thermal styling tool (dụng cụ tạo kiểu bằng nhiệt)"
+    ],
+    "idioms": "Let your hair down (Thư giãn, xõa hết mình)",
+    "speaking_part1_example": "Modern thermo-electric blow dryers integrate ionic technology to evaporate moisture without desiccating hair cuticles.",
+    "speaking_part1_translation": "Máy sấy tóc nhiệt điện hiện đại tích hợp công nghệ ion giúp làm khô tóc nhanh chóng mà không làm hư tổn biểu bì tóc."
+  },
+  {
+    "label": "toothbrush",
+    "common_word": "Toothbrush",
+    "vietnamese_meaning": "Bàn chải đánh răng",
+    "academic_word": "Oral hygiene bristled implement",
+    "ipa": "/ˈtuːθ.brʌʃ/",
+    "band_score": "8.0",
+    "collocations": [
+      "dental plaque elimination (loại bỏ mảng bám răng miệng)",
+      "sonic vibration technology (công nghệ sóng rung siêu âm)"
+    ],
+    "idioms": "Fight tooth and nail (Chiến đấu hết mình, không khoan nhượng)",
+    "speaking_part1_example": "Employing an oral hygiene bristled implement equipped with soft microfibers forestalls periodontal degeneration.",
+    "speaking_part1_translation": "Sử dụng bàn chải đánh răng lông mềm sợi vi mảnh giúp ngăn ngừa hiệu quả các bệnh thoái hóa nha chu."
+  },
+  {
+    "label": "traffic warden",
+    "common_word": "Traffic warden",
+    "vietnamese_meaning": "Nhân viên kiểm soát đỗ xe",
+    "academic_word": "Parking regulatory officer",
+    "ipa": "/ˈtræf.ɪk ˌwɔːr.dən/",
+    "band_score": "7.5",
+    "collocations": [
+      "traffic law enforcement (thực thi luật giao thông)",
+      "citation issuance (xử phạt vi phạm)"
+    ],
+    "idioms": "By the book (Làm theo đúng quy tắc sách vở)",
+    "speaking_part1_example": "Parking regulatory officers maintain urban transit discipline by preventing unauthorized obstruction on thoroughfares.",
+    "speaking_part1_translation": "Các nhân viên kiểm soát giao thông duy trì trật tự đô thị bằng cách xử lý các trường hợp đỗ xe trái phép cản trở lối đi."
+  },
+  {
+    "label": "diningtable",
+    "common_word": "Dining table",
+    "vietnamese_meaning": "Bàn ăn",
+    "academic_word": "Communal dining surface / Table",
+    "ipa": "/ˈdaɪ.nɪŋ ˌteɪ.bəl/",
+    "band_score": "7.5",
+    "collocations": [
+      "communal meal gathering (tụ họp bữa ăn gia đình)",
+      "solid timber construction (kết cấu gỗ tự nhiên bền chắc)"
+    ],
+    "idioms": "Table an issue (Đưa vấn đề ra bàn thảo luận)",
+    "speaking_part1_example": "A spacious dining table serves as the epicentre of family discourse and gastronomic delight.",
+    "speaking_part1_translation": "Một chiếc bàn ăn rộng rãi là nơi trung tâm gắn kết những câu chuyện gia đình và niềm vui ẩm thực."
+  }
+]
