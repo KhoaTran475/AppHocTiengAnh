@@ -182,7 +182,12 @@ class _LoginScreenState extends State<LoginScreen> {
           children: [
             Icon(Icons.dns_rounded, color: AppColors.primary),
             SizedBox(width: 8),
-            Text('Cấu hình Server Backend', style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold)),
+            Expanded(
+              child: Text(
+                'Cấu hình Server Backend',
+                style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
+              ),
+            ),
           ],
         ),
         content: SingleChildScrollView(
