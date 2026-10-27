@@ -3,8 +3,8 @@ import 'package:flutter/foundation.dart';
 
 /// Quản lý toàn bộ URLs & Endpoints kết nối tới FastAPI Backend
 class ApiEndpoints {
-  /// Địa chỉ IP LAN mặc định của máy tính chạy server (192.168.1.50)
-  static const String serverHost = '192.168.1.50';
+  /// Địa chỉ IP LAN mặc định của máy tính chạy server (192.168.1.54)
+  static const String serverHost = '192.168.1.54';
 
   /// Base URL thông minh:
   /// - Android Thiết bị thật hoặc Wi-Fi: 192.168.1.50:8000

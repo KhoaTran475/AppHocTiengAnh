@@ -215,9 +215,9 @@ class _LoginScreenState extends State<LoginScreen> {
                 children: [
                   ActionChip(
                     avatar: const Icon(Icons.wifi, size: 16),
-                    label: const Text('Wi-Fi: 192.168.1.50'),
+                    label: Text('Wi-Fi: ${ApiEndpoints.serverHost}'),
                     onPressed: () {
-                      controller.text = 'http://192.168.1.50:8000/api/v1';
+                      controller.text = 'http://${ApiEndpoints.serverHost}:8000/api/v1';
                     },
                   ),
                   ActionChip(
