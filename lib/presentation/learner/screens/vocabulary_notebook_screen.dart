@@ -1,9 +1,11 @@
+import 'dart:developer';
 import 'package:flutter/material.dart';
 import 'package:flutter_tts/flutter_tts.dart';
 import 'package:provider/provider.dart';
 import '../../../core/database/database_helper.dart';
 import '../../../core/services/notebook_service.dart';
 import '../../../core/theme/app_theme.dart';
+import '../../../data/datasources/api_service.dart';
 import '../../../data/models/vocabulary_item_model.dart';
 import '../../auth/providers/auth_provider.dart';
 import 'camera_scan_screen.dart';
@@ -48,36 +50,89 @@ class _VocabularyNotebookScreenState extends State<VocabularyNotebookScreen> {
 
   Future<void> _loadWords() async {
     final currentUser = context.read<AuthProvider>().currentUser;
-    if (currentUser == null || currentUser.id == null) return;
+    if (currentUser == null) {
+      if (mounted) setState(() => _isLoading = false);
+      return;
+    }
 
-    // 1. Tải danh sách từ SQLite để hiển thị ngay lập tức
-    final words =
-        await DatabaseHelper.instance.getNotebookItemsByUser(currentUser.id!);
+    final userId = currentUser.id ?? 1;
 
-    if (mounted) {
+    // 1. Tải tức thì từ SQLite cục bộ để hiển thị ngay lập tức (Offline-first)
+    List<VocabularyItemModel> localWords = [];
+    try {
+      localWords = await DatabaseHelper.instance.getNotebookItemsByUser(userId);
+    } catch (e) {
+      log('Lỗi đọc SQLite notebook: $e');
+    }
+
+    if (mounted && localWords.isNotEmpty) {
       setState(() {
-        _allWords = words;
+        _allWords = localWords;
         _applyFilter();
         _isLoading = false;
       });
     }
 
-    // 2. Đồng bộ 2 chiều với Supabase Cloud
-    await NotebookService.syncNotebook(
-      localUserId: currentUser.id!,
-      username: currentUser.username,
-    );
+    // 2. Tải và đồng bộ từ Backend API
+    try {
+      final apiWords = await ApiService.instance.getNotebookItems();
 
-    // 3. Cập nhật lại danh sách nếu có từ mới kéo từ Supabase về
-    final refreshedWords =
-        await DatabaseHelper.instance.getNotebookItemsByUser(currentUser.id!);
+      // Kết hợp dữ liệu Local & Backend
+      final map = <String, VocabularyItemModel>{};
+      for (final item in localWords) {
+        map[item.word.trim().toLowerCase()] = item;
+      }
+      for (final item in apiWords) {
+        map[item.word.trim().toLowerCase()] = item;
+        // Đảm bảo từ mới từ API cũng được lưu vào SQLite cục bộ để dùng offline
+        if (!localWords.any((lw) => lw.word.trim().toLowerCase() == item.word.trim().toLowerCase())) {
+          DatabaseHelper.instance.insertNotebookItem(item, username: currentUser.username, skipCloudSync: true);
+        }
+      }
 
-    if (mounted && refreshedWords.length != _allWords.length) {
-      setState(() {
-        _allWords = refreshedWords;
-        _applyFilter();
-      });
+      // Đẩy những từ local chưa có trên API lên Backend
+      for (final lw in localWords) {
+        if (!apiWords.any((aw) => aw.word.trim().toLowerCase() == lw.word.trim().toLowerCase())) {
+          ApiService.instance.saveToNotebook(lw).catchError((_) => lw);
+        }
+      }
+
+      final combined = map.values.toList();
+      if (mounted) {
+        setState(() {
+          _allWords = combined;
+          _applyFilter();
+          _isLoading = false;
+        });
+      }
+    } catch (e) {
+      log('Không kết nối được API Backend: $e. Sử dụng dữ liệu offline.');
+      if (mounted) {
+        setState(() {
+          _allWords = localWords;
+          _applyFilter();
+          _isLoading = false;
+        });
+      }
     }
+
+    // 3. Đồng bộ 2 chiều ngầm trực tiếp với Supabase
+    try {
+      NotebookService.syncNotebook(
+        localUserId: userId,
+        username: currentUser.username,
+      ).then((_) async {
+        if (mounted) {
+          final refreshed = await DatabaseHelper.instance.getNotebookItemsByUser(userId);
+          if (refreshed.length != _allWords.length && mounted) {
+            setState(() {
+              _allWords = refreshed;
+              _applyFilter();
+            });
+          }
+        }
+      });
+    } catch (_) {}
   }
 
   void _onSearchChanged() {
@@ -136,7 +191,10 @@ class _VocabularyNotebookScreenState extends State<VocabularyNotebookScreen> {
       ),
     );
 
-    if (confirmed == true) {
+    if (confirmed == true && item.id != null) {
+      try {
+        await ApiService.instance.deleteFromNotebook(item.id!);
+      } catch (_) {}
       await DatabaseHelper.instance.deleteNotebookItem(
         item.id!,
         word: item.word,
@@ -158,6 +216,7 @@ class _VocabularyNotebookScreenState extends State<VocabularyNotebookScreen> {
       }
     }
   }
+
 
   @override
   void dispose() {
@@ -361,18 +420,22 @@ class _VocabularyNotebookScreenState extends State<VocabularyNotebookScreen> {
                       ),
                       const SizedBox(width: 8),
                       // Nhãn đối tượng gốc (COCO Label)
-                      Container(
-                        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
-                        decoration: BoxDecoration(
-                          color: Colors.grey[200],
-                          borderRadius: BorderRadius.circular(8),
-                        ),
-                        child: Text(
-                          item.label,
-                          style: TextStyle(
-                            fontSize: 11,
-                            fontWeight: FontWeight.w600,
-                            color: Colors.grey[700],
+                      Flexible(
+                        child: Container(
+                          padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+                          decoration: BoxDecoration(
+                            color: Colors.grey[200],
+                            borderRadius: BorderRadius.circular(8),
+                          ),
+                          child: Text(
+                            item.label,
+                            style: TextStyle(
+                              fontSize: 11,
+                              fontWeight: FontWeight.w600,
+                              color: Colors.grey[700],
+                            ),
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
                           ),
                         ),
                       ),

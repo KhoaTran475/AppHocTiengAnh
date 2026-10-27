@@ -6,6 +6,7 @@ import '../../../core/services/practice_service.dart';
 import '../../../core/theme/app_theme.dart';
 import '../../../data/models/skill_models.dart';
 import '../../../data/repositories/skill_repository.dart';
+import '../../../data/datasources/api_service.dart';
 import '../../auth/providers/auth_provider.dart';
 
 /// Màn hình Luyện thi IELTS Listening Chuyên sâu theo cơ chế Vượt ải (Gamified Stages).
@@ -24,6 +25,7 @@ class ListeningPracticeScreen extends StatefulWidget {
 }
 
 class _ListeningPracticeScreenState extends State<ListeningPracticeScreen> {
+  List<ListeningLessonModel> _lessons = List.from(SkillRepository.sampleListeningLessons);
   late ListeningLessonModel _selectedLesson;
   final FlutterTts _flutterTts = FlutterTts();
 
@@ -42,24 +44,57 @@ class _ListeningPracticeScreenState extends State<ListeningPracticeScreen> {
   @override
   void initState() {
     super.initState();
-    _selectedLesson = SkillRepository.sampleListeningLessons.first;
+    _selectedLesson = _lessons.first;
     _initTts();
-    _loadStageProgress();
+    _loadStageProgress(autoSelectNextStage: true);
   }
 
-  Future<void> _loadStageProgress() async {
+  Future<void> _loadStageProgress({bool autoSelectNextStage = false}) async {
     final user = context.read<AuthProvider>().currentUser;
     final userId = user?.id ?? 1;
 
-    final highest = await ListeningProgressService.getHighestUnlockedStage(userId);
+    int highest = 1;
     final Map<int, int> stars = {};
     final Map<int, int> bestScores = {};
 
-    for (final lesson in SkillRepository.sampleListeningLessons) {
+    // Tải danh sách bài nghe từ API để hỗ trợ mở rộng ải động (> 5 ải)
+    try {
+      final apiLessons = await ApiService.instance.getListeningLessons();
+      if (apiLessons.isNotEmpty) {
+        _lessons = apiLessons;
+        _lessons.sort((a, b) => a.stageNumber.compareTo(b.stageNumber));
+      }
+    } catch (_) {}
+
+    if (!_lessons.any((l) => l.id == _selectedLesson.id)) {
+      _selectedLesson = _lessons.first;
+    }
+
+    try {
+      final prog = await ApiService.instance.getListeningProgress();
+      highest = prog['highest_unlocked_stage'] as int? ?? 1;
+      final rawStages = prog['stages'] as List<dynamic>? ?? [];
+      for (final s in rawStages) {
+        final stNum = s['stage_number'] as int;
+        stars[stNum] = s['stars'] as int? ?? 0;
+        bestScores[stNum] = s['best_score'] as int? ?? 0;
+      }
+    } catch (_) {}
+
+    // Kết hợp thêm từ SharedPreferences cục bộ để đảm bảo tiến độ luôn được giữ vững
+    final localHighest = await ListeningProgressService.getHighestUnlockedStage(userId);
+    if (localHighest > highest) {
+      highest = localHighest;
+    }
+    for (final lesson in _lessons) {
       final s = await ListeningProgressService.getStageStars(userId, lesson.stageNumber);
       final b = await ListeningProgressService.getStageBestScore(userId, lesson.stageNumber);
-      stars[lesson.stageNumber] = s;
-      bestScores[lesson.stageNumber] = b;
+      if (s > (stars[lesson.stageNumber] ?? 0)) {
+        stars[lesson.stageNumber] = s;
+      }
+      if (b > (bestScores[lesson.stageNumber] ?? 0)) {
+        bestScores[lesson.stageNumber] = b;
+      }
     }
 
     if (mounted) {
@@ -67,10 +102,26 @@ class _ListeningPracticeScreenState extends State<ListeningPracticeScreen> {
         _highestUnlockedStage = highest;
         _stageStars = stars;
         _stageBestScores = bestScores;
-        _selectedLesson = SkillRepository.sampleListeningLessons.firstWhere(
-          (l) => l.id == _selectedLesson.id,
-          orElse: () => SkillRepository.sampleListeningLessons.first,
-        );
+
+        if (autoSelectNextStage) {
+          // Tự động tìm Ải tiếp theo chưa hoàn thành để mở trực tiếp cho người học
+          ListeningLessonModel targetLesson = _lessons.first;
+          for (final lesson in _lessons) {
+            if (lesson.stageNumber <= highest) {
+              targetLesson = lesson;
+              // Nếu ải này chưa có sao (chưa vượt qua), chọn ngay ải này để làm tiếp
+              if ((stars[lesson.stageNumber] ?? 0) == 0) {
+                break;
+              }
+            }
+          }
+          if (_selectedLesson.id != targetLesson.id) {
+            _selectedLesson = targetLesson;
+            _userAnswers.clear();
+            _isSubmitted = false;
+            _correctCount = 0;
+          }
+        }
       });
     }
   }
@@ -141,7 +192,22 @@ class _ListeningPracticeScreenState extends State<ListeningPracticeScreen> {
       estimatedBand = '6.5';
     }
 
-    final isPassed = score >= _selectedLesson.passScoreRequired;
+    bool isPassed = score >= _selectedLesson.passScoreRequired;
+
+    // Nộp bài và chấm điểm qua FastAPI Backend
+    final Map<String, String> stringAnswers = _userAnswers.map((k, v) => MapEntry(k.toString(), v));
+    try {
+      final res = await ApiService.instance.submitTest(
+        lessonId: _selectedLesson.id,
+        skillType: 'listening',
+        answers: stringAnswers,
+      );
+      if (res['score'] != null) score = res['score'] as int;
+      if (res['band_score'] != null) estimatedBand = res['band_score'] as String;
+      if (res['passed'] != null) isPassed = res['passed'] as bool;
+    } catch (_) {}
+
+    if (!mounted) return;
 
     setState(() {
       _correctCount = score;
@@ -158,21 +224,23 @@ class _ListeningPracticeScreenState extends State<ListeningPracticeScreen> {
       score: score,
       totalQuestions: total,
       passScoreRequired: _selectedLesson.passScoreRequired,
-      totalStagesAvailable: SkillRepository.sampleListeningLessons.length,
+      totalStagesAvailable: _lessons.length,
     );
 
-    await _loadStageProgress();
+    await _loadStageProgress(autoSelectNextStage: false);
 
     // 2. Lưu kết quả bài nghe lên Supabase
-    await PracticeService.savePracticeResult(
-      skillType: 'listening',
-      lessonId: _selectedLesson.id,
-      lessonTitle: 'Ải ${_selectedLesson.stageNumber}: ${_selectedLesson.title}',
-      score: score,
-      totalQuestions: total,
-      bandScore: estimatedBand,
-      username: currentUser?.username,
-    );
+    try {
+      await PracticeService.savePracticeResult(
+        skillType: 'listening',
+        lessonId: _selectedLesson.id,
+        lessonTitle: 'Ải ${_selectedLesson.stageNumber}: ${_selectedLesson.title}',
+        score: score,
+        totalQuestions: total,
+        bandScore: estimatedBand,
+        username: currentUser?.username,
+      );
+    } catch (_) {}
 
     // 3. Hiển thị Dialog chúc mừng Vượt ải hoặc Nhắc nhở làm lại
     if (mounted) {
@@ -186,7 +254,7 @@ class _ListeningPracticeScreenState extends State<ListeningPracticeScreen> {
 
   void _showVictoryDialog(int score, int total, String band, bool newlyUnlocked) {
     final stars = ListeningProgressService.calculateStars(score, total, _selectedLesson.passScoreRequired);
-    final hasNextStage = _selectedLesson.stageNumber < SkillRepository.sampleListeningLessons.length;
+    final hasNextStage = _lessons.any((l) => l.stageNumber == _selectedLesson.stageNumber + 1);
 
     showDialog(
       context: context,
@@ -285,8 +353,9 @@ class _ListeningPracticeScreenState extends State<ListeningPracticeScreen> {
                 child: ElevatedButton.icon(
                   onPressed: () {
                     Navigator.pop(ctx);
-                    final nextLesson = SkillRepository.sampleListeningLessons.firstWhere(
+                    final nextLesson = _lessons.firstWhere(
                       (l) => l.stageNumber == _selectedLesson.stageNumber + 1,
+                      orElse: () => _lessons.last,
                     );
                     _switchStage(nextLesson);
                   },
@@ -430,7 +499,7 @@ class _ListeningPracticeScreenState extends State<ListeningPracticeScreen> {
       appBar: AppBar(
         title: const Text(
           'IELTS Listening Vượt Ải',
-          style: TextStyle(fontWeight: FontWeight.bold, color: AppColors.navy),
+          style: TextStyle(fontWeight: FontWeight.bold, color: AppColors.navy, fontSize: 18),
         ),
         backgroundColor: Colors.white,
         elevation: 0.5,
@@ -474,6 +543,10 @@ class _ListeningPracticeScreenState extends State<ListeningPracticeScreen> {
             // ── 2. Banner kết quả chấm điểm (Nếu đã nộp bài) ──
             if (_isSubmitted) ...[
               _buildScoreBanner(),
+              const SizedBox(height: 16),
+            ] else if ((_stageStars[_selectedLesson.stageNumber] ?? 0) > 0) ...[
+              // Banner thông báo ải đã vượt qua khi người học xem lại ải cũ
+              _buildPassedStageNoticeBanner(),
               const SizedBox(height: 16),
             ],
 
@@ -661,7 +734,9 @@ class _ListeningPracticeScreenState extends State<ListeningPracticeScreen> {
                     : Icons.check_circle_rounded),
                 label: Text(_isSubmitted
                     ? 'LÀM LẠI BÀI NGHE'
-                    : 'NỘP BÀI & CHẤM ĐIỂM (${_userAnswers.length}/${_selectedLesson.questions.length})'),
+                    : (((_stageStars[_selectedLesson.stageNumber] ?? 0) > 0)
+                        ? 'NỘP BÀI ĐỂ NÂNG ĐIỂM (${_userAnswers.length}/${_selectedLesson.questions.length})'
+                        : 'NỘP BÀI & CHẤM ĐIỂM (${_userAnswers.length}/${_selectedLesson.questions.length})')),
                 style: ElevatedButton.styleFrom(
                   backgroundColor:
                       _isSubmitted ? AppColors.navy : AppColors.primary,
@@ -899,16 +974,19 @@ class _ListeningPracticeScreenState extends State<ListeningPracticeScreen> {
                   children: [
                     Row(
                       children: [
-                        Text(
-                          isPassed ? '🏆 VƯỢT ẢI THÀNH CÔNG' : '⚠️ CHƯA ĐỦ ĐIỂM QUA ẢI',
-                          style: TextStyle(
-                            color: isPassed ? Colors.amberAccent : Colors.white70,
-                            fontSize: 12,
-                            fontWeight: FontWeight.bold,
-                            letterSpacing: 0.8,
+                        Expanded(
+                          child: Text(
+                            isPassed ? '🏆 VƯỢT ẢI THÀNH CÔNG' : '⚠️ CHƯA ĐỦ ĐIỂM QUA ẢI',
+                            overflow: TextOverflow.ellipsis,
+                            style: TextStyle(
+                              color: isPassed ? Colors.amberAccent : Colors.white70,
+                              fontSize: 12,
+                              fontWeight: FontWeight.bold,
+                              letterSpacing: 0.8,
+                            ),
                           ),
                         ),
-                        const Spacer(),
+                        const SizedBox(width: 8),
                         // Hiển thị số sao
                         Row(
                           children: List.generate(3, (i) {
@@ -951,9 +1029,81 @@ class _ListeningPracticeScreenState extends State<ListeningPracticeScreen> {
     );
   }
 
-  /// Bản đồ Vượt ải (Gamified Stage Roadmap) hiển thị các Ải từ 1 đến 5
+  /// Banner thông báo khi người học đang xem lại một Ải đã từng vượt qua thành công
+  Widget _buildPassedStageNoticeBanner() {
+    final stars = _stageStars[_selectedLesson.stageNumber] ?? 0;
+    final bestScore = _stageBestScores[_selectedLesson.stageNumber] ?? 0;
+    final total = _selectedLesson.questions.length;
+
+    return Container(
+      padding: const EdgeInsets.all(16),
+      decoration: BoxDecoration(
+        color: const Color(0xFFF0FDF4),
+        borderRadius: BorderRadius.circular(16),
+        border: Border.all(color: const Color(0xFF86EFAC)),
+      ),
+      child: Row(
+        children: [
+          Container(
+            padding: const EdgeInsets.all(10),
+            decoration: BoxDecoration(
+              color: Colors.green.withValues(alpha: 0.15),
+              shape: BoxShape.circle,
+            ),
+            child: const Icon(Icons.check_circle_rounded, color: Color(0xFF16A34A), size: 28),
+          ),
+          const SizedBox(width: 14),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Row(
+                  children: [
+                    Expanded(
+                      child: Text(
+                        'ẢI ${_selectedLesson.stageNumber} ĐÃ VƯỢT QUA!',
+                        style: const TextStyle(
+                          fontWeight: FontWeight.w800,
+                          fontSize: 13,
+                          color: Color(0xFF15803D),
+                          letterSpacing: 0.5,
+                        ),
+                        overflow: TextOverflow.ellipsis,
+                      ),
+                    ),
+                    const SizedBox(width: 6),
+                    Row(
+                      children: List.generate(3, (i) {
+                        final lit = i < stars;
+                        return Icon(
+                          lit ? Icons.star_rounded : Icons.star_outline_rounded,
+                          size: 16,
+                          color: lit ? Colors.amber : Colors.grey[300],
+                        );
+                      }),
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 4),
+                Text(
+                  'Kỷ lục: Đúng $bestScore/$total câu. Bạn có thể làm lại bài này để nâng điểm hoặc bấm sang Ải tiếp theo trên lộ trình.',
+                  style: TextStyle(
+                    fontSize: 12,
+                    color: Colors.green[900],
+                    height: 1.3,
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  /// Bản đồ Vượt ải (Gamified Stage Roadmap) hiển thị toàn bộ các ải
   Widget _buildStageRoadmap() {
-    final stages = SkillRepository.sampleListeningLessons;
+    final stages = _lessons;
 
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
@@ -976,16 +1126,19 @@ class _ListeningPracticeScreenState extends State<ListeningPracticeScreen> {
             children: [
               const Icon(Icons.sports_esports_rounded, color: Colors.deepOrange, size: 20),
               const SizedBox(width: 6),
-              const Text(
-                'LỘ TRÌNH VƯỢT ẢI LISTENING',
-                style: TextStyle(
-                  fontSize: 13,
-                  fontWeight: FontWeight.w800,
-                  letterSpacing: 0.8,
-                  color: AppColors.navy,
+              const Expanded(
+                child: Text(
+                  'LỘ TRÌNH VƯỢT ẢI',
+                  overflow: TextOverflow.ellipsis,
+                  style: TextStyle(
+                    fontSize: 13,
+                    fontWeight: FontWeight.w800,
+                    letterSpacing: 0.5,
+                    color: AppColors.navy,
+                  ),
                 ),
               ),
-              const Spacer(),
+              const SizedBox(width: 8),
               Container(
                 padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
                 decoration: BoxDecoration(

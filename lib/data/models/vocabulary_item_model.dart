@@ -48,19 +48,39 @@ class VocabularyItemModel {
 
   /// Khởi tạo từ Map của SQLite
   factory VocabularyItemModel.fromMap(Map<String, dynamic> map) {
+    int parsedUserId = 1;
+    final rawUserId = map['userId'] ?? map['user_id'];
+    if (rawUserId is int) {
+      parsedUserId = rawUserId;
+    } else if (rawUserId != null) {
+      parsedUserId = int.tryParse(rawUserId.toString()) ?? 1;
+    }
+
+    String? collStr;
+    final rawColl = map['collocations'];
+    if (rawColl is List) {
+      collStr = rawColl.map((e) => e.toString()).join('; ');
+    } else if (rawColl != null) {
+      collStr = rawColl.toString();
+    }
+
     return VocabularyItemModel(
       id: map['id'] as int?,
-      userId: map['userId'] as int,
+      userId: parsedUserId,
       label: map['label'] as String? ?? '',
       word: map['word'] as String? ?? '',
       ipa: map['ipa'] as String? ?? '',
       translation: map['translation'] as String? ?? '',
       example: map['example'] as String?,
-      exampleTranslation: map['exampleTranslation'] as String?,
-      bandScore: map['bandScore'] as String? ?? '7.0',
-      collocations: map['collocations'] as String?,
+      exampleTranslation: map['exampleTranslation'] as String? ?? map['example_translation'] as String?,
+      bandScore: map['bandScore'] as String? ?? map['band_score'] as String? ?? '7.0',
+      collocations: collStr,
       idioms: map['idioms'] as String?,
-      createdAt: map['createdAt'] as String? ?? DateTime.now().toIso8601String(),
+      createdAt: map['createdAt'] as String? ?? map['created_at'] as String? ?? DateTime.now().toIso8601String(),
     );
   }
+
+
+  /// Khởi tạo từ JSON backend FastAPI
+  factory VocabularyItemModel.fromJson(Map<String, dynamic> json) => VocabularyItemModel.fromMap(json);
 }

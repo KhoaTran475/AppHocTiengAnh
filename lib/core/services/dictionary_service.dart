@@ -1,6 +1,7 @@
 import 'dart:convert';
 import 'dart:developer';
 import 'dart:io';
+import '../../data/datasources/api_service.dart';
 
 class DictionaryEntry {
   final String word;
@@ -397,14 +398,31 @@ class DictionaryService {
       );
     }
 
-    // 1. Kiểm tra trong bộ từ điển cục bộ
-    if (_localDictionary.containsKey(cleanWord)) {
-      return _localDictionary[cleanWord]!;
-    }
-
-    // 2. Kiểm tra bộ nhớ đệm tạm thời
+    // 0. Kiểm tra bộ nhớ đệm tạm thời
     if (_memoryCache.containsKey(cleanWord)) {
       return _memoryCache[cleanWord]!;
+    }
+
+    // 1. Tra cứu từ Backend FastAPI
+    try {
+      final apiResult = await ApiService.instance.lookupWord(cleanWord);
+      if (apiResult != null) {
+        final entry = DictionaryEntry(
+          word: apiResult['word'] as String? ?? cleanWord,
+          ipa: apiResult['ipa'] as String? ?? '',
+          vietnameseMeaning: apiResult['vietnamese_meaning'] as String? ?? '',
+          partOfSpeech: apiResult['part_of_speech'] as String? ?? 'academic word',
+          bandScore: apiResult['band_score'] as String? ?? '7.0+',
+          example: apiResult['example'] as String?,
+        );
+        _memoryCache[cleanWord] = entry;
+        return entry;
+      }
+    } catch (_) {}
+
+    // 2. Kiểm tra trong bộ từ điển cục bộ
+    if (_localDictionary.containsKey(cleanWord)) {
+      return _localDictionary[cleanWord]!;
     }
 
     // 3. Fallback trực tuyến: Tra IPA và Dịch nghĩa tự động

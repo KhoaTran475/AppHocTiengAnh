@@ -1,8 +1,9 @@
 import 'dart:developer';
 import 'package:supabase_flutter/supabase_flutter.dart';
+import '../../data/datasources/api_service.dart';
 import '../database/supabase_config.dart';
 
-/// Service quản lý lưu trữ điểm số & lịch sử làm bài tập 4 kỹ năng lên Supabase Cloud.
+/// Service quản lý lưu trữ điểm số & lịch sử làm bài tập 4 kỹ năng qua FastAPI backend (với fallback Supabase Cloud).
 class PracticeService {
   static final SupabaseClient _supabase = SupabaseConfig.client;
 
@@ -52,9 +53,9 @@ class PracticeService {
     }
   }
 
-  /// Lưu kết quả bài làm (Reading / Listening) lên Supabase
+  /// Lưu kết quả bài làm (Reading / Listening / Speaking / Writing) qua FastAPI Backend hoặc Supabase
   static Future<bool> savePracticeResult({
-    required String skillType, // 'reading', 'listening'
+    required String skillType, // 'reading', 'listening', 'speaking', 'writing'
     required String lessonId,
     required String lessonTitle,
     required int score,
@@ -62,6 +63,23 @@ class PracticeService {
     required String bandScore,
     String? username,
   }) async {
+    // Ưu tiên gửi qua FastAPI backend
+    try {
+      await ApiService.instance.submitTest(
+        skillType: skillType,
+        lessonId: lessonId,
+        lessonTitle: lessonTitle,
+        score: score,
+        totalQuestions: totalQuestions,
+        bandScore: bandScore,
+      );
+      log('✅ [FastAPI] Đã lưu thành công kết quả ($skillType - $lessonTitle - Band $bandScore)!');
+      return true;
+    } catch (e) {
+      log('⚠️ [FastAPI] Lỗi submit test, fallback sang Supabase: $e');
+    }
+
+    // Fallback sang Supabase Cloud
     try {
       final userId = await _resolveUserId(username);
       if (userId == null) {
@@ -80,7 +98,7 @@ class PracticeService {
         'created_at': DateTime.now().toIso8601String(),
       });
 
-      log('✅ Đã lưu thành công kết quả ($skillType - $lessonTitle - Band $bandScore) lên Supabase!');
+      log('✅ [Supabase] Đã lưu thành công kết quả ($skillType - $lessonTitle - Band $bandScore) lên Supabase!');
       return true;
     } catch (e) {
       log('⚠️ Lỗi lưu kết quả làm bài lên Supabase: $e');
@@ -88,8 +106,19 @@ class PracticeService {
     }
   }
 
-  /// Lấy lịch sử làm bài từ Supabase
+  /// Lấy lịch sử làm bài từ FastAPI Backend hoặc Supabase
   static Future<List<Map<String, dynamic>>> getPracticeHistory(String skillType, {String? username}) async {
+    // Ưu tiên lấy từ FastAPI backend
+    try {
+      final apiHistory = await ApiService.instance.getPracticeHistory(skillType: skillType);
+      if (apiHistory.isNotEmpty) {
+        return apiHistory;
+      }
+    } catch (e) {
+      log('⚠️ [FastAPI] Lỗi tải lịch sử, fallback sang Supabase: $e');
+    }
+
+    // Fallback sang Supabase Cloud
     try {
       final userId = await _resolveUserId(username);
       if (userId == null) return [];

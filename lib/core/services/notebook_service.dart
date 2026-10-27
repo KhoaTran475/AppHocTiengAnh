@@ -100,26 +100,31 @@ class NotebookService {
         parsedTime = DateTime.now();
       }
 
+      final normLabel = item.label.trim().toLowerCase();
+      final collList = (item.collocations != null && item.collocations!.trim().isNotEmpty)
+          ? item.collocations!.split(';').map((s) => s.trim()).where((s) => s.isNotEmpty).toList()
+          : [];
+
       final payload = {
         'user_id': userUuid,
-        'label': item.label,
-        'word': item.word,
-        'ipa': item.ipa,
-        'translation': item.translation,
+        'label': normLabel,
+        'word': item.word.trim(),
+        'ipa': item.ipa.trim().isNotEmpty ? item.ipa.trim() : '/${item.word.trim()}/',
+        'translation': item.translation.trim().isNotEmpty ? item.translation.trim() : item.word.trim(),
         'example': item.example,
         'example_translation': item.exampleTranslation,
-        'band_score': item.bandScore,
-        'collocations': item.collocations,
-        'idioms': item.idioms,
+        'band_score': item.bandScore.trim().isNotEmpty ? item.bandScore.trim() : '7.0',
+        'collocations': collList,
+        'idioms': item.idioms ?? '',
         'created_at': parsedTime.toUtc().toIso8601String(),
       };
 
-      // Kiểm tra xem từ vựng đã tồn tại trên Supabase chưa
+      // Kiểm tra xem từ vựng đã tồn tại trên Supabase chưa theo user_id và label (Unique constraint)
       final existing = await _supabase
           .from('vocabulary_notebook')
           .select('id')
           .eq('user_id', userUuid)
-          .eq('word', item.word)
+          .eq('label', normLabel)
           .maybeSingle();
 
       if (existing != null) {
@@ -137,6 +142,7 @@ class NotebookService {
       log('⚠️ Lỗi đồng bộ từ vựng "${item.word}" lên Supabase: $e');
       return false;
     }
+
   }
 
   /// Xóa từ vựng trên Supabase khi người dùng xóa ở sổ tay local
@@ -220,8 +226,11 @@ class NotebookService {
             example: r['example'] as String?,
             exampleTranslation: r['example_translation'] as String?,
             bandScore: r['band_score'] as String? ?? '7.0',
-            collocations: r['collocations'] as String?,
+            collocations: r['collocations'] is List
+                ? (r['collocations'] as List).join('; ')
+                : r['collocations']?.toString(),
             idioms: r['idioms'] as String?,
+
             createdAt: r['created_at'] as String? ?? DateTime.now().toIso8601String(),
           );
           await DatabaseHelper.instance.insertNotebookItem(

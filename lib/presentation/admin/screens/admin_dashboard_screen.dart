@@ -3,17 +3,21 @@ import 'package:flutter_tts/flutter_tts.dart';
 import 'package:provider/provider.dart';
 import '../../../core/database/database_helper.dart';
 import '../../../core/theme/app_theme.dart';
+import '../../../data/datasources/api_service.dart';
 import '../../../data/models/object_mapping_model.dart';
 import '../../../data/models/user_model.dart';
 import '../../auth/providers/auth_provider.dart';
 import '../widgets/mapping_edit_sheet.dart';
 import '../widgets/user_create_dialog.dart';
+import '../widgets/skill_lesson_edit_dialog.dart';
+import '../widgets/skill_import_dialog.dart';
 
 /// Màn hình Quản trị viên Toàn diện (Admin Dashboard)
 /// Hoàn thiện Phase 4 đồ án IELTS Vision:
 /// 1. Báo cáo KPIs hệ thống (Tổng từ vựng AI, Người dùng, Sổ tay, Model AI).
 /// 2. Quản lý toàn bộ 82 nhãn Object_Mappings (Tìm kiếm, Lọc band, Nghe thử TTS, Thêm/Sửa/Xóa).
-/// 3. Quản lý phân quyền tài khoản (Users RBAC) và Khôi phục dữ liệu gốc.
+/// 3. Quản trị 4 Kỹ năng & 5 Ải Vượt bài (CRUD + Import File Đề thi).
+/// 4. Quản lý phân quyền tài khoản (Users RBAC) và Khôi phục dữ liệu gốc.
 class AdminDashboardScreen extends StatefulWidget {
   const AdminDashboardScreen({super.key});
 
@@ -39,6 +43,13 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
   String _selectedBandFilter = 'Tất cả';
   final List<String> _bandOptions = ['Tất cả', 'Band 7.0', 'Band 7.5', 'Band 8.0', 'Band 8.5'];
 
+  // 4 Kỹ Năng & 5 Ải IELTS
+  String _selectedSkill = 'reading';
+  List<Map<String, dynamic>> _skillLessons = [];
+  bool _isLoadingSkills = false;
+  final TextEditingController _skillSearchController = TextEditingController();
+  int? _selectedStageFilter;
+
   // Users
   List<UserModel> _users = [];
 
@@ -51,11 +62,13 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
     _initTts();
     _loadAllData();
     _searchController.addListener(_applyFilter);
+    _skillSearchController.addListener(() => setState(() {}));
   }
 
   @override
   void dispose() {
     _searchController.dispose();
+    _skillSearchController.dispose();
     _flutterTts.stop();
     super.dispose();
   }
@@ -68,10 +81,38 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
     } catch (_) {}
   }
 
-  /// Nạp toàn bộ dữ liệu từ SQLite
+  /// Nạp toàn bộ dữ liệu từ FastAPI Backend (hoặc fallback SQLite)
   Future<void> _loadAllData() async {
     setState(() => _isLoading = true);
     try {
+      // 1. Thử tải qua FastAPI backend
+      try {
+        final kpis = await ApiService.instance.getAdminKpis();
+        final mappings = await ApiService.instance.getMappings();
+        final users = await ApiService.instance.getAllUsers();
+
+        if (mappings.isNotEmpty) {
+          final bandDistRaw = kpis['band_distribution'] as Map<String, dynamic>? ?? {};
+          final Map<String, int> bandDist = {};
+          bandDistRaw.forEach((k, v) => bandDist[k] = (v as num).toInt());
+
+          setState(() {
+            _allMappings = mappings;
+            _users = users;
+            _totalMappings = (kpis['total_mappings'] as num?)?.toInt() ?? mappings.length;
+            _totalUsers = (kpis['total_users'] as num?)?.toInt() ?? users.length;
+            _totalLearners = (kpis['total_learners'] as num?)?.toInt() ?? 0;
+            _totalSavedNotebook = (kpis['total_saved_notebook'] as num?)?.toInt() ?? 0;
+            _bandDistribution = bandDist;
+            _isLoading = false;
+          });
+          _applyFilter();
+          _loadSkillLessons();
+          return;
+        }
+      } catch (_) {}
+
+      // 2. Fallback sang SQLite cục bộ
       final db = DatabaseHelper.instance;
       final mappings = await db.getAllMappings();
       final users = await db.getAllUsers();
@@ -92,6 +133,7 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
         _isLoading = false;
       });
       _applyFilter();
+      _loadSkillLessons();
     } catch (e) {
       setState(() => _isLoading = false);
       if (mounted) {
@@ -121,6 +163,98 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
   }
 
   // ─────────────────────────────────────────────────────────────
+  // HÀNH ĐỘNG QUẢN TRỊ 4 KỸ NĂNG & 5 ẢI (SKILLS CRUD & IMPORT)
+  // ─────────────────────────────────────────────────────────────
+
+  Future<void> _loadSkillLessons() async {
+    setState(() => _isLoadingSkills = true);
+    try {
+      final lessons = await ApiService.instance.getAdminSkillLessons(_selectedSkill);
+      if (mounted) {
+        setState(() {
+          _skillLessons = lessons;
+          _isLoadingSkills = false;
+        });
+      }
+    } catch (e) {
+      if (mounted) setState(() => _isLoadingSkills = false);
+    }
+  }
+
+  Future<void> _showAddSkillLesson() async {
+    final success = await SkillLessonEditDialog.show(
+      context,
+      defaultSkill: _selectedSkill,
+    );
+    if (success == true) {
+      _loadSkillLessons();
+    }
+  }
+
+  Future<void> _showEditSkillLesson(Map<String, dynamic> lesson) async {
+    final success = await SkillLessonEditDialog.show(
+      context,
+      initialLesson: lesson,
+      defaultSkill: _selectedSkill,
+    );
+    if (success == true) {
+      _loadSkillLessons();
+    }
+  }
+
+  Future<void> _deleteSkillLesson(Map<String, dynamic> lesson) async {
+    final lessonId = lesson['id'] as String;
+    final title = lesson['title'] as String? ?? lessonId;
+    final confirm = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+        title: const Text('Xác nhận xóa đề thi / ải', style: TextStyle(fontWeight: FontWeight.bold)),
+        content: Text('Bạn có chắc muốn xóa vĩnh viễn bài thi "$title" ($lessonId)?'),
+        actions: [
+          TextButton(onPressed: () => Navigator.of(ctx).pop(false), child: const Text('Hủy')),
+          ElevatedButton(
+            onPressed: () => Navigator.of(ctx).pop(true),
+            style: ElevatedButton.styleFrom(backgroundColor: Colors.redAccent),
+            child: const Text('Xóa vĩnh viễn'),
+          ),
+        ],
+      ),
+    );
+
+    if (confirm == true) {
+      try {
+        await ApiService.instance.deleteSkillLesson(lessonId);
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              backgroundColor: Colors.green[700],
+              content: Text('Đã xóa bài thi "$title" thành công!'),
+            ),
+          );
+        }
+        _loadSkillLessons();
+      } catch (e) {
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(backgroundColor: Colors.red, content: Text('Lỗi: $e')),
+          );
+        }
+      }
+    }
+  }
+
+  Future<void> _showImportSkillDialog() async {
+    final success = await SkillImportDialog.show(
+      context,
+      initialSkill: _selectedSkill,
+    );
+    if (success == true) {
+      _loadSkillLessons();
+    }
+  }
+
+  // ─────────────────────────────────────────────────────────────
   // HÀNH ĐỘNG QUẢN TRỊ TỪ VỰNG (MAPPINGS CRUD)
   // ─────────────────────────────────────────────────────────────
 
@@ -128,12 +262,22 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
   Future<void> _showAddMapping() async {
     final newMapping = await MappingEditSheet.show(context);
     if (newMapping != null) {
+      bool apiSuccess = false;
+      try {
+        final created = await ApiService.instance.createMapping(newMapping);
+        apiSuccess = created.id != null;
+      } catch (_) {}
+
       await DatabaseHelper.instance.insertMapping(newMapping);
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
             backgroundColor: Colors.green[700],
-            content: Text('✅ Đã thêm mới nhãn "${newMapping.label}" thành công!'),
+            content: Text(
+              apiSuccess
+                  ? '✅ [FastAPI] Đã thêm mới nhãn "${newMapping.label}" thành công!'
+                  : '✅ Đã thêm mới nhãn "${newMapping.label}" thành công!',
+            ),
           ),
         );
       }
@@ -145,12 +289,24 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
   Future<void> _showEditMapping(ObjectMappingModel mapping) async {
     final updated = await MappingEditSheet.show(context, initialMapping: mapping);
     if (updated != null) {
+      bool apiSuccess = false;
+      if (updated.id != null) {
+        try {
+          final res = await ApiService.instance.updateMapping(updated);
+          apiSuccess = res.id != null;
+        } catch (_) {}
+      }
+
       await DatabaseHelper.instance.updateMapping(updated);
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
             backgroundColor: Colors.green[700],
-            content: Text('✅ Đã cập nhật từ vựng cho "${updated.label}"!'),
+            content: Text(
+              apiSuccess
+                  ? '✅ [FastAPI] Đã cập nhật từ vựng cho "${updated.label}"!'
+                  : '✅ Đã cập nhật từ vựng cho "${updated.label}"!',
+            ),
           ),
         );
       }
@@ -183,6 +339,10 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
     );
 
     if (confirm == true && mapping.id != null) {
+      try {
+        await ApiService.instance.deleteMapping(mapping.id!);
+      } catch (_) {}
+
       await DatabaseHelper.instance.deleteMapping(mapping.id!);
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
@@ -225,6 +385,10 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
 
     if (confirm == true) {
       setState(() => _isLoading = true);
+      try {
+        await ApiService.instance.resetDefaultMappings();
+      } catch (_) {}
+
       await DatabaseHelper.instance.resetDefaultMappings();
       await _loadAllData();
       if (mounted) {
@@ -250,6 +414,16 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
       final role = result['role']!;
 
       try {
+        bool apiSuccess = false;
+        try {
+          final u = await ApiService.instance.createUser(
+            username: username,
+            password: password,
+            role: role,
+          );
+          apiSuccess = u.id != null;
+        } catch (_) {}
+
         await DatabaseHelper.instance.insertUser(
           username: username,
           password: password,
@@ -259,7 +433,11 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
           ScaffoldMessenger.of(context).showSnackBar(
             SnackBar(
               backgroundColor: Colors.green[700],
-              content: Text('✅ Đã tạo tài khoản $role: "$username" thành công!'),
+              content: Text(
+                apiSuccess
+                    ? '✅ [FastAPI] Đã tạo tài khoản $role: "$username" thành công!'
+                    : '✅ Đã tạo tài khoản $role: "$username" thành công!',
+              ),
             ),
           );
         }
@@ -304,6 +482,10 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
     );
 
     if (confirm == true && targetUser.id != null) {
+      try {
+        await ApiService.instance.deleteUser(targetUser.id!);
+      } catch (_) {}
+
       await DatabaseHelper.instance.deleteUser(targetUser.id!);
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
@@ -380,6 +562,7 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
                 children: [
                   _buildOverviewTab(),
                   _buildMappingsTab(),
+                  _buildSkillsTab(),
                   _buildUsersTab(),
                 ],
               ),
@@ -390,8 +573,14 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
           border: Border(top: BorderSide(color: Colors.grey[200]!, width: 1)),
         ),
         child: BottomNavigationBar(
+          type: BottomNavigationBarType.fixed,
           currentIndex: _currentTabIndex,
-          onTap: (index) => setState(() => _currentTabIndex = index),
+          onTap: (index) {
+            setState(() => _currentTabIndex = index);
+            if (index == 2) {
+              _loadSkillLessons();
+            }
+          },
           backgroundColor: Colors.white,
           selectedItemColor: AppColors.primary,
           unselectedItemColor: Colors.grey[500],
@@ -406,6 +595,10 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
             BottomNavigationBarItem(
               icon: Icon(Icons.auto_stories_rounded),
               label: 'Kho từ vựng AI',
+            ),
+            BottomNavigationBarItem(
+              icon: Icon(Icons.military_tech_rounded),
+              label: '4 Kỹ năng & Ải',
             ),
             BottomNavigationBarItem(
               icon: Icon(Icons.manage_accounts_rounded),
@@ -424,7 +617,17 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
                 style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold),
               ),
             )
-          : null,
+          : _currentTabIndex == 2
+              ? FloatingActionButton.extended(
+                  onPressed: _showAddSkillLesson,
+                  backgroundColor: AppColors.primary,
+                  icon: const Icon(Icons.add_task_rounded, color: Colors.white),
+                  label: const Text(
+                    'Thêm đề/ải mới',
+                    style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold),
+                  ),
+                )
+              : null,
     );
   }
 
@@ -478,7 +681,7 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
           physics: const NeverScrollableScrollPhysics(),
           mainAxisSpacing: 12,
           crossAxisSpacing: 12,
-          childAspectRatio: 1.45,
+          childAspectRatio: 1.30,
           children: [
             _buildKpiCard(
               title: 'Từ vựng AI',
@@ -630,10 +833,11 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
           const Divider(color: Colors.white24, height: 1),
           const SizedBox(height: 10),
           Row(
-            mainAxisAlignment: MainAxisAlignment.spaceBetween,
             children: [
               _buildAiStatItem('Mô hình', 'yolov8n_float32.tflite'),
+              const SizedBox(width: 8),
               _buildAiStatItem('Bộ nhãn', '80 COCO Objects'),
+              const SizedBox(width: 8),
               _buildAiStatItem('Độ trễ', '< 35ms Offline'),
             ],
           ),
@@ -643,20 +847,27 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
   }
 
   Widget _buildAiStatItem(String label, String value) {
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        Text(label, style: const TextStyle(color: Colors.grey, fontSize: 11)),
-        const SizedBox(height: 2),
-        Text(
-          value,
-          style: const TextStyle(
-            color: Colors.white,
-            fontSize: 12,
-            fontWeight: FontWeight.bold,
+    return Expanded(
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(
+            label,
+            style: const TextStyle(color: Colors.grey, fontSize: 11),
+            overflow: TextOverflow.ellipsis,
           ),
-        ),
-      ],
+          const SizedBox(height: 2),
+          Text(
+            value,
+            style: const TextStyle(
+              color: Colors.white,
+              fontSize: 12,
+              fontWeight: FontWeight.bold,
+            ),
+            overflow: TextOverflow.ellipsis,
+          ),
+        ],
+      ),
     );
   }
 
@@ -688,10 +899,14 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
           Row(
             mainAxisAlignment: MainAxisAlignment.spaceBetween,
             children: [
-              Text(
-                title,
-                style: TextStyle(fontSize: 12, color: Colors.grey[600], fontWeight: FontWeight.w600),
+              Expanded(
+                child: Text(
+                  title,
+                  style: TextStyle(fontSize: 12, color: Colors.grey[600], fontWeight: FontWeight.w600),
+                  overflow: TextOverflow.ellipsis,
+                ),
               ),
+              const SizedBox(width: 6),
               Container(
                 padding: const EdgeInsets.all(6),
                 decoration: BoxDecoration(
@@ -712,11 +927,14 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
                   fontWeight: FontWeight.bold,
                   color: AppColors.navy,
                 ),
+                overflow: TextOverflow.ellipsis,
               ),
               const SizedBox(height: 2),
               Text(
                 subtitle,
                 style: TextStyle(fontSize: 10.5, color: Colors.grey[500]),
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
               ),
             ],
           ),
@@ -745,14 +963,18 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
           Row(
             mainAxisAlignment: MainAxisAlignment.spaceBetween,
             children: [
-              const Text(
-                'Phân bố Từ vựng theo Band IELTS',
-                style: TextStyle(
-                  fontSize: 14,
-                  fontWeight: FontWeight.bold,
-                  color: AppColors.navy,
+              const Expanded(
+                child: Text(
+                  'Phân bố Từ vựng theo Band IELTS',
+                  style: TextStyle(
+                    fontSize: 14,
+                    fontWeight: FontWeight.bold,
+                    color: AppColors.navy,
+                  ),
+                  overflow: TextOverflow.ellipsis,
                 ),
               ),
+              const SizedBox(width: 8),
               Text(
                 'Tổng: $_totalMappings nhãn',
                 style: TextStyle(fontSize: 12, color: Colors.grey[600]),
@@ -981,85 +1203,102 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            // Top row: Band badge + COCO Label chip + TTS + Edit + Delete
+            // Top row: Band badge + COCO Label chip + TTS + Edit + Delete (Chống tràn pixel)
             Row(
               children: [
-                // Band badge
-                Container(
-                  padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
-                  decoration: BoxDecoration(
-                    gradient: const LinearGradient(
-                      colors: [Color(0xFF10B981), Color(0xFF059669)],
-                    ),
-                    borderRadius: BorderRadius.circular(8),
-                  ),
-                  child: Text(
-                    'Band ${item.bandScore}',
-                    style: const TextStyle(
-                      color: Colors.white,
-                      fontSize: 11,
-                      fontWeight: FontWeight.bold,
-                    ),
-                  ),
-                ),
-                const SizedBox(width: 8),
-                // COCO Label
-                Container(
-                  padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
-                  decoration: BoxDecoration(
-                    color: Colors.blueGrey[50],
-                    borderRadius: BorderRadius.circular(8),
-                    border: Border.all(color: Colors.blueGrey[200]!),
-                  ),
+                Expanded(
                   child: Row(
+                    mainAxisSize: MainAxisSize.min,
                     children: [
-                      const Icon(Icons.tag_rounded, size: 12, color: Colors.blueGrey),
-                      const SizedBox(width: 2),
-                      Text(
-                        item.label,
-                        style: const TextStyle(
-                          fontSize: 11,
-                          fontWeight: FontWeight.bold,
-                          color: Colors.blueGrey,
+                      // Band badge
+                      Container(
+                        padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 3),
+                        decoration: BoxDecoration(
+                          gradient: const LinearGradient(
+                            colors: [Color(0xFF10B981), Color(0xFF059669)],
+                          ),
+                          borderRadius: BorderRadius.circular(8),
+                        ),
+                        child: Text(
+                          'Band ${item.bandScore}',
+                          style: const TextStyle(
+                            color: Colors.white,
+                            fontSize: 11,
+                            fontWeight: FontWeight.bold,
+                          ),
+                        ),
+                      ),
+                      const SizedBox(width: 6),
+                      // COCO Label với Flexible và TextOverflow.ellipsis để không bao giờ bị tràn
+                      Flexible(
+                        child: Container(
+                          padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 3),
+                          decoration: BoxDecoration(
+                            color: Colors.blueGrey[50],
+                            borderRadius: BorderRadius.circular(8),
+                            border: Border.all(color: Colors.blueGrey[200]!),
+                          ),
+                          child: Row(
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              const Icon(Icons.tag_rounded, size: 12, color: Colors.blueGrey),
+                              const SizedBox(width: 2),
+                              Flexible(
+                                child: Text(
+                                  item.label,
+                                  maxLines: 1,
+                                  overflow: TextOverflow.ellipsis,
+                                  style: const TextStyle(
+                                    fontSize: 11,
+                                    fontWeight: FontWeight.bold,
+                                    color: Colors.blueGrey,
+                                  ),
+                                ),
+                              ),
+                            ],
+                          ),
                         ),
                       ),
                     ],
                   ),
                 ),
-                const Spacer(),
-                // TTS Play button
-                IconButton(
-                  visualDensity: VisualDensity.compact,
-                  padding: EdgeInsets.zero,
-                  constraints: const BoxConstraints(),
-                  icon: const Icon(Icons.volume_up_rounded, color: AppColors.primary, size: 22),
-                  tooltip: 'Nghe phát âm',
-                  onPressed: () {
-                    final wordToSpeak = item.academicWord.contains('/')
-                        ? item.academicWord.split('/').first.trim()
-                        : item.academicWord;
-                    _flutterTts.speak(wordToSpeak);
-                  },
-                ),
-                const SizedBox(width: 10),
-                // Edit button
-                IconButton(
-                  visualDensity: VisualDensity.compact,
-                  padding: EdgeInsets.zero,
-                  constraints: const BoxConstraints(),
-                  icon: const Icon(Icons.edit_note_rounded, color: Colors.blue, size: 22),
-                  tooltip: 'Chỉnh sửa từ vựng',
-                  onPressed: () => _showEditMapping(item),
-                ),
-                const SizedBox(width: 10),
-                // Delete button
-                IconButton(
-                  visualDensity: VisualDensity.compact,
-                  padding: EdgeInsets.zero,
-                  constraints: const BoxConstraints(),
-                  icon: const Icon(Icons.delete_outline_rounded, color: Colors.redAccent, size: 20),
-                  tooltip: 'Xóa nhãn',
-                  onPressed: () => _deleteMapping(item),
+                const SizedBox(width: 4),
+                // Action Buttons với kích thước gọn gàng
+                Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    IconButton(
+                      visualDensity: VisualDensity.compact,
+                      padding: const EdgeInsets.all(4),
+                      constraints: const BoxConstraints(),
+                      icon: const Icon(Icons.volume_up_rounded, color: AppColors.primary, size: 20),
+                      tooltip: 'Nghe phát âm',
+                      onPressed: () {
+                        final wordToSpeak = item.academicWord.contains('/')
+                            ? item.academicWord.split('/').first.trim()
+                            : item.academicWord;
+                        _flutterTts.speak(wordToSpeak);
+                      },
+                    ),
+                    const SizedBox(width: 4),
+                    IconButton(
+                      visualDensity: VisualDensity.compact,
+                      padding: const EdgeInsets.all(4),
+                      constraints: const BoxConstraints(),
+                      icon: const Icon(Icons.edit_note_rounded, color: Colors.blue, size: 21),
+                      tooltip: 'Chỉnh sửa từ vựng',
+                      onPressed: () => _showEditMapping(item),
+                    ),
+                    const SizedBox(width: 4),
+                    IconButton(
+                      visualDensity: VisualDensity.compact,
+                      padding: const EdgeInsets.all(4),
+                      constraints: const BoxConstraints(),
+                      icon: const Icon(Icons.delete_outline_rounded, color: Colors.redAccent, size: 19),
+                      tooltip: 'Xóa nhãn',
+                      onPressed: () => _deleteMapping(item),
+                    ),
+                  ],
                 ),
               ],
             ),
@@ -1076,22 +1315,30 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
             ),
             const SizedBox(height: 2),
 
-            // IPA + Common Word
+            // IPA + Common Word (với Flexible chống tràn)
             Row(
               children: [
-                Text(
-                  item.ipa,
-                  style: TextStyle(
-                    fontSize: 13,
-                    fontStyle: FontStyle.italic,
-                    color: Colors.grey[600],
+                Flexible(
+                  child: Text(
+                    item.ipa,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: TextStyle(
+                      fontSize: 13,
+                      fontStyle: FontStyle.italic,
+                      color: Colors.grey[600],
+                    ),
                   ),
                 ),
                 if (item.commonWord.isNotEmpty) ...[
                   const SizedBox(width: 8),
-                  Text(
-                    '(${item.commonWord})',
-                    style: TextStyle(fontSize: 12, color: Colors.grey[500]),
+                  Flexible(
+                    child: Text(
+                      '(${item.commonWord})',
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: TextStyle(fontSize: 12, color: Colors.grey[500]),
+                    ),
                   ),
                 ],
               ],
@@ -1155,43 +1402,521 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
   }
 
   // ─────────────────────────────────────────────────────────────
-  // TAB 2: QUẢN TRỊ TÀI KHOẢN (USER RBAC MANAGEMENT)
+  // TAB 3: QUẢN TRỊ 4 KỸ NĂNG & 5 ẢI (SKILLS & 5 STAGES MANAGEMENT)
+  // ─────────────────────────────────────────────────────────────
+
+  Widget _buildSkillsTab() {
+    // Lọc bài học theo từ khóa tìm kiếm và ải
+    final query = _skillSearchController.text.trim().toLowerCase();
+    final filtered = _skillLessons.where((lesson) {
+      final title = (lesson['title'] as String? ?? '').toLowerCase();
+      final topic = (lesson['category_or_topic'] as String? ?? '').toLowerCase();
+      final stage = (lesson['stage_number'] as num?)?.toInt() ?? 1;
+
+      final matchesQuery = query.isEmpty || title.contains(query) || topic.contains(query);
+      final matchesStage = _selectedStageFilter == null || stage == _selectedStageFilter;
+
+      return matchesQuery && matchesStage;
+    }).toList();
+
+    // Sắp xếp theo số ải tăng dần
+    filtered.sort((a, b) {
+      final sA = (a['stage_number'] as num?)?.toInt() ?? 1;
+      final sB = (b['stage_number'] as num?)?.toInt() ?? 1;
+      return sA.compareTo(sB);
+    });
+
+    return ListView(
+      padding: const EdgeInsets.fromLTRB(16, 16, 16, 80),
+      children: [
+        // 1. Header & Actions Bar
+        Card(
+          elevation: 0.5,
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(16),
+            side: BorderSide(color: Colors.grey[200]!),
+          ),
+          child: Padding(
+            padding: const EdgeInsets.all(16),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Row(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Container(
+                      padding: const EdgeInsets.all(10),
+                      decoration: BoxDecoration(
+                        color: AppColors.primary.withValues(alpha: 0.1),
+                        borderRadius: BorderRadius.circular(12),
+                      ),
+                      child: const Icon(
+                        Icons.military_tech_rounded,
+                        color: AppColors.primary,
+                        size: 28,
+                      ),
+                    ),
+                    const SizedBox(width: 12),
+                    Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          const Text(
+                            'Quản lý Đề thi & 5 Ải Vượt bài IELTS',
+                            style: TextStyle(
+                              fontSize: 16.5,
+                              fontWeight: FontWeight.bold,
+                              color: AppColors.navy,
+                            ),
+                          ),
+                          const SizedBox(height: 2),
+                          Text(
+                            'Toàn quyền Thêm/Sửa/Xóa và Nạp đề thi hàng loạt từ file cho 4 kỹ năng:',
+                            style: TextStyle(fontSize: 12, color: Colors.grey[600]),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 14),
+                // Action Buttons
+                Wrap(
+                  spacing: 10,
+                  runSpacing: 8,
+                  children: [
+                    OutlinedButton.icon(
+                      onPressed: _showImportSkillDialog,
+                      icon: const Icon(Icons.file_upload_outlined, size: 18),
+                      label: const Text('Import File Đề Thi (.json/.xlsx)'),
+                      style: OutlinedButton.styleFrom(
+                        foregroundColor: AppColors.primary,
+                        side: const BorderSide(color: AppColors.primary),
+                        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+                      ),
+                    ),
+                    ElevatedButton.icon(
+                      onPressed: _showAddSkillLesson,
+                      icon: const Icon(Icons.add_task_rounded, color: Colors.white, size: 18),
+                      label: const Text('Thêm Ải / Đề thi Mới'),
+                      style: ElevatedButton.styleFrom(
+                        backgroundColor: AppColors.primary,
+                        foregroundColor: Colors.white,
+                        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+                      ),
+                    ),
+                  ],
+                ),
+              ],
+            ),
+          ),
+        ),
+        const SizedBox(height: 14),
+
+        // 2. Chuyển đổi 4 Kỹ năng (Skill Tabs)
+        SingleChildScrollView(
+          scrollDirection: Axis.horizontal,
+          child: Row(
+            children: [
+              _buildSkillPill('reading', '📖 Reading', Icons.menu_book_rounded),
+              const SizedBox(width: 8),
+              _buildSkillPill('listening', '🎧 Listening', Icons.headphones_rounded),
+              const SizedBox(width: 8),
+              _buildSkillPill('writing', '✍️ Writing', Icons.edit_note_rounded),
+              const SizedBox(width: 8),
+              _buildSkillPill('speaking', '🗣️ Speaking', Icons.record_voice_over_rounded),
+            ],
+          ),
+        ),
+        const SizedBox(height: 14),
+
+        // 3. Search Bar & Bộ lọc Ải (Stage 1 -> 5)
+        Row(
+          children: [
+            Expanded(
+              child: TextField(
+                controller: _skillSearchController,
+                decoration: InputDecoration(
+                  hintText: 'Tìm kiếm theo tiêu đề hoặc chủ đề...',
+                  prefixIcon: const Icon(Icons.search_rounded, size: 20),
+                  suffixIcon: _skillSearchController.text.isNotEmpty
+                      ? IconButton(
+                          icon: const Icon(Icons.clear, size: 18),
+                          onPressed: () => _skillSearchController.clear(),
+                        )
+                      : null,
+                  filled: true,
+                  fillColor: Colors.white,
+                  contentPadding: const EdgeInsets.symmetric(vertical: 0, horizontal: 12),
+                  border: OutlineInputBorder(
+                    borderRadius: BorderRadius.circular(12),
+                    borderSide: BorderSide(color: Colors.grey[300]!),
+                  ),
+                  enabledBorder: OutlineInputBorder(
+                    borderRadius: BorderRadius.circular(12),
+                    borderSide: BorderSide(color: Colors.grey[200]!),
+                  ),
+                ),
+              ),
+            ),
+          ],
+        ),
+        const SizedBox(height: 10),
+
+        // Filter chips cho các Ải
+        SingleChildScrollView(
+          scrollDirection: Axis.horizontal,
+          child: Row(
+            children: [
+              const Text('Lọc theo ải: ', style: TextStyle(fontSize: 12, fontWeight: FontWeight.bold, color: Colors.grey)),
+              const SizedBox(width: 6),
+              ChoiceChip(
+                label: const Text('Tất cả'),
+                selected: _selectedStageFilter == null,
+                onSelected: (val) => setState(() => _selectedStageFilter = null),
+              ),
+              ...List.generate(
+                _skillLessons
+                    .map((l) => (l['stage_number'] as num?)?.toInt() ?? 1)
+                    .fold(5, (prev, curr) => curr > prev ? curr : prev),
+                (i) => i + 1,
+              ).map((stg) {
+                return Padding(
+                  padding: const EdgeInsets.only(right: 6),
+                  child: ChoiceChip(
+                    label: Text('Ải $stg'),
+                    selected: _selectedStageFilter == stg,
+                    onSelected: (val) => setState(() => _selectedStageFilter = val ? stg : null),
+                  ),
+                );
+              }),
+
+            ],
+          ),
+        ),
+        const SizedBox(height: 14),
+
+        // 4. Danh sách các bài thi / ải
+        if (_isLoadingSkills) ...[
+          const Center(
+            child: Padding(
+              padding: EdgeInsets.all(40),
+              child: CircularProgressIndicator(color: AppColors.primary),
+            ),
+          ),
+        ] else if (filtered.isEmpty) ...[
+          Container(
+            padding: const EdgeInsets.all(32),
+            decoration: BoxDecoration(
+              color: Colors.white,
+              borderRadius: BorderRadius.circular(16),
+              border: Border.all(color: Colors.grey[200]!),
+            ),
+            child: Column(
+              children: [
+                Icon(Icons.layers_clear_rounded, size: 48, color: Colors.grey[400]),
+                const SizedBox(height: 10),
+                Text(
+                  'Chưa có bài thi nào cho ${_selectedSkill.toUpperCase()}',
+                  style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 15),
+                ),
+                const SizedBox(height: 4),
+                Text(
+                  'Bạn có thể bấm "Thêm Ải / Đề thi Mới" hoặc "Import File Đề Thi" để bắt đầu.',
+                  style: TextStyle(fontSize: 12, color: Colors.grey[600]),
+                  textAlign: TextAlign.center,
+                ),
+              ],
+            ),
+          ),
+        ] else ...[
+          ...filtered.map((lesson) => _buildSkillLessonCard(lesson)),
+        ],
+      ],
+    );
+  }
+
+  Widget _buildSkillPill(String skillKey, String label, IconData icon) {
+    final isSelected = _selectedSkill == skillKey;
+
+    return InkWell(
+      onTap: () {
+        if (_selectedSkill != skillKey) {
+          setState(() {
+            _selectedSkill = skillKey;
+            _selectedStageFilter = null;
+          });
+          _loadSkillLessons();
+        }
+      },
+      borderRadius: BorderRadius.circular(12),
+      child: AnimatedContainer(
+        duration: const Duration(milliseconds: 200),
+        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
+        decoration: BoxDecoration(
+          color: isSelected ? AppColors.primary : Colors.white,
+          borderRadius: BorderRadius.circular(12),
+          border: Border.all(
+            color: isSelected ? AppColors.primary : Colors.grey[300]!,
+            width: isSelected ? 1.5 : 1,
+          ),
+          boxShadow: isSelected
+              ? [
+                  BoxShadow(
+                    color: AppColors.primary.withValues(alpha: 0.25),
+                    blurRadius: 8,
+                    offset: const Offset(0, 3),
+                  )
+                ]
+              : [],
+        ),
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Icon(
+              icon,
+              size: 16,
+              color: isSelected ? Colors.white : Colors.grey[700],
+            ),
+            const SizedBox(width: 8),
+            Text(
+              label,
+              style: TextStyle(
+                fontWeight: isSelected ? FontWeight.bold : FontWeight.w600,
+                fontSize: 13,
+                color: isSelected ? Colors.white : Colors.grey[800],
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildSkillLessonCard(Map<String, dynamic> lesson) {
+    final stageNum = (lesson['stage_number'] as num?)?.toInt() ?? 1;
+    final title = lesson['title'] as String? ?? 'Chưa đặt tiêu đề';
+    final topic = lesson['category_or_topic'] as String? ?? 'General';
+    final diffLabel = lesson['difficulty_label'] as String? ?? 'Ải $stageNum';
+    final targetBand = lesson['target_band'] ?? lesson['band_score_target'] ?? '7.0';
+    final passCond = lesson['pass_condition'] as Map<String, dynamic>? ?? {};
+    final passReq = lesson['pass_score_required'];
+
+    String passText = '';
+    if (_selectedSkill == 'reading' || _selectedSkill == 'listening') {
+      final minC = passCond['min_correct'] ?? passReq ?? 2;
+      passText = 'Đúng tối thiểu: $minC câu để qua ải';
+    } else if (_selectedSkill == 'writing') {
+      final minW = passCond['min_words'] ?? 150;
+      final minB = passCond['min_band'] ?? 6.0;
+      passText = 'Tối thiểu: $minW từ (Band >= $minB)';
+    } else {
+      final minB = passCond['min_band'] ?? 6.0;
+      passText = 'Band trung bình >= $minB để qua ải';
+    }
+
+    final content = lesson['content_json'] as Map<String, dynamic>? ?? {};
+    String detailSummary = '';
+    if (_selectedSkill == 'reading' || _selectedSkill == 'listening') {
+      final qList = content['questions'] as List<dynamic>? ?? [];
+      detailSummary = 'Tổng số: ${qList.length} câu hỏi trắc nghiệm';
+    } else if (_selectedSkill == 'writing') {
+      final taskType = content['taskType'] as String? ?? 'Task 2';
+      detailSummary = 'Dạng bài: $taskType • Có bài văn mẫu Band 8.0+';
+    } else {
+      detailSummary = 'Gồm câu hỏi Part 1 & Đề bài Part 2 Cue Card';
+    }
+
+    return Card(
+      margin: const EdgeInsets.only(bottom: 12),
+      elevation: 0.8,
+      shape: RoundedRectangleBorder(
+        borderRadius: BorderRadius.circular(14),
+        side: BorderSide(color: Colors.grey[200]!),
+      ),
+      child: Padding(
+        padding: const EdgeInsets.all(14),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            // Top Row: Badges & Actions (Chống tràn pixel)
+            Row(
+              children: [
+                Expanded(
+                  child: Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      // Stage Badge
+                      Container(
+                        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+                        decoration: BoxDecoration(
+                          color: AppColors.primary.withValues(alpha: 0.1),
+                          borderRadius: BorderRadius.circular(6),
+                        ),
+                        child: Text(
+                          'ẢI $stageNum',
+                          style: const TextStyle(
+                            color: AppColors.primary,
+                            fontSize: 11,
+                            fontWeight: FontWeight.bold,
+                          ),
+                        ),
+                      ),
+                      const SizedBox(width: 6),
+
+                      // Target Band Badge
+                      Flexible(
+                        child: Container(
+                          padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 3),
+                          decoration: BoxDecoration(
+                            color: Colors.amber.withValues(alpha: 0.15),
+                            borderRadius: BorderRadius.circular(6),
+                            border: Border.all(color: Colors.amber[700]!.withValues(alpha: 0.3)),
+                          ),
+                          child: Row(
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              Icon(Icons.star_rounded, size: 14, color: Colors.amber[800]),
+                              const SizedBox(width: 3),
+                              Flexible(
+                                child: Text(
+                                  'Target Band $targetBand',
+                                  maxLines: 1,
+                                  overflow: TextOverflow.ellipsis,
+                                  style: TextStyle(
+                                    color: Colors.amber[900],
+                                    fontSize: 11,
+                                    fontWeight: FontWeight.bold,
+                                  ),
+                                ),
+                              ),
+                            ],
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+                const SizedBox(width: 6),
+
+                // Action buttons (Edit & Delete)
+                Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    IconButton(
+                      visualDensity: VisualDensity.compact,
+                      padding: const EdgeInsets.all(4),
+                      constraints: const BoxConstraints(),
+                      icon: const Icon(Icons.edit_outlined, color: Colors.blueAccent, size: 20),
+                      tooltip: 'Chỉnh sửa bài thi',
+                      onPressed: () => _showEditSkillLesson(lesson),
+                    ),
+                    const SizedBox(width: 4),
+                    IconButton(
+                      visualDensity: VisualDensity.compact,
+                      padding: const EdgeInsets.all(4),
+                      constraints: const BoxConstraints(),
+                      icon: const Icon(Icons.delete_outline_rounded, color: Colors.redAccent, size: 20),
+                      tooltip: 'Xóa bài thi',
+                      onPressed: () => _deleteSkillLesson(lesson),
+                    ),
+                  ],
+                ),
+              ],
+            ),
+            const SizedBox(height: 8),
+
+            // Title & Difficulty
+            Text(
+              title,
+              style: const TextStyle(
+                fontWeight: FontWeight.bold,
+                fontSize: 15.5,
+                color: AppColors.navy,
+              ),
+            ),
+            const SizedBox(height: 2),
+            Text(
+              '$diffLabel • Chủ đề: $topic',
+              style: TextStyle(fontSize: 12, color: Colors.grey[600]),
+            ),
+            const SizedBox(height: 8),
+
+            // Pass condition chip & details
+            Container(
+              padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+              decoration: BoxDecoration(
+                color: Colors.grey[50],
+                borderRadius: BorderRadius.circular(8),
+                border: Border.all(color: Colors.grey[200]!),
+              ),
+              child: Row(
+                children: [
+                  const Icon(Icons.verified_rounded, size: 16, color: Colors.green),
+                  const SizedBox(width: 6),
+                  Expanded(
+                    child: Text(
+                      passText,
+                      style: const TextStyle(
+                        fontSize: 12,
+                        fontWeight: FontWeight.w600,
+                        color: Colors.green,
+                      ),
+                    ),
+                  ),
+                  Text(
+                    detailSummary,
+                    style: TextStyle(fontSize: 11, color: Colors.grey[500]),
+                  ),
+                ],
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  // ─────────────────────────────────────────────────────────────
+  // TAB 4: QUẢN TRỊ TÀI KHOẢN (USER RBAC MANAGEMENT)
   // ─────────────────────────────────────────────────────────────
 
   Widget _buildUsersTab() {
     final currentUser = context.read<AuthProvider>().currentUser;
 
     return ListView(
-      padding: const EdgeInsets.fromLTRB(16, 16, 16, 24),
+      padding: const EdgeInsets.fromLTRB(16, 16, 16, 100),
       children: [
         Row(
-          mainAxisAlignment: MainAxisAlignment.spaceBetween,
           children: [
-            Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                const Text(
-                  'Danh sách Người dùng Hệ thống',
-                  style: TextStyle(
-                    fontSize: 16,
-                    fontWeight: FontWeight.bold,
-                    color: AppColors.navy,
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  const Text(
+                    'Người dùng Hệ thống',
+                    style: TextStyle(
+                      fontSize: 16,
+                      fontWeight: FontWeight.bold,
+                      color: AppColors.navy,
+                    ),
                   ),
-                ),
-                Text(
-                  'Tổng cộng: ${_users.length} tài khoản',
-                  style: TextStyle(fontSize: 12, color: Colors.grey[600]),
-                ),
-              ],
+                  Text(
+                    'Tổng cộng: ${_users.length} tài khoản',
+                    style: TextStyle(fontSize: 12, color: Colors.grey[600]),
+                  ),
+                ],
+              ),
             ),
+            const SizedBox(width: 8),
             ElevatedButton.icon(
               onPressed: _showAddUser,
-              icon: const Icon(Icons.person_add_rounded, size: 18),
-              label: const Text('Thêm tài khoản', style: TextStyle(fontSize: 12)),
+              icon: const Icon(Icons.person_add_rounded, size: 16),
+              label: const Text('Thêm mới', style: TextStyle(fontSize: 12)),
               style: ElevatedButton.styleFrom(
                 backgroundColor: AppColors.primary,
                 foregroundColor: Colors.white,
-                padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
                 shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
               ),
             ),
@@ -1213,49 +1938,65 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
                 color: isCurrent ? AppColors.primary.withValues(alpha: 0.5) : Colors.grey[200]!,
               ),
             ),
-            child: ListTile(
-              leading: CircleAvatar(
-                backgroundColor: isAdmin ? Colors.amber[100] : Colors.blue[50],
-                child: Icon(
-                  isAdmin ? Icons.security_rounded : Icons.person_rounded,
-                  color: isAdmin ? Colors.amber[900] : Colors.blue[700],
-                ),
-              ),
-              title: Row(
+            child: Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+              child: Row(
                 children: [
-                  Text(
-                    u.username,
-                    style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 15),
-                  ),
-                  if (isCurrent) ...[
-                    const SizedBox(width: 8),
-                    Container(
-                      padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
-                      decoration: BoxDecoration(
-                        color: AppColors.primary.withValues(alpha: 0.1),
-                        borderRadius: BorderRadius.circular(6),
-                      ),
-                      child: const Text(
-                        'ĐANG ĐĂNG NHẬP',
-                        style: TextStyle(
-                          color: AppColors.primary,
-                          fontSize: 9,
-                          fontWeight: FontWeight.bold,
-                        ),
-                      ),
+                  CircleAvatar(
+                    radius: 20,
+                    backgroundColor: isAdmin ? Colors.amber[100] : Colors.blue[50],
+                    child: Icon(
+                      isAdmin ? Icons.security_rounded : Icons.person_rounded,
+                      color: isAdmin ? Colors.amber[900] : Colors.blue[700],
+                      size: 20,
                     ),
-                  ],
-                ],
-              ),
-              subtitle: Text(
-                'Tạo lúc: ${u.createdAt.length >= 10 ? u.createdAt.substring(0, 10) : u.createdAt}',
-                style: TextStyle(fontSize: 11, color: Colors.grey[500]),
-              ),
-              trailing: Row(
-                mainAxisSize: MainAxisSize.min,
-                children: [
+                  ),
+                  const SizedBox(width: 10),
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Row(
+                          children: [
+                            Flexible(
+                              child: Text(
+                                u.username,
+                                style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 14.5),
+                                overflow: TextOverflow.ellipsis,
+                                maxLines: 1,
+                              ),
+                            ),
+                            if (isCurrent) ...[
+                              const SizedBox(width: 6),
+                              Container(
+                                padding: const EdgeInsets.symmetric(horizontal: 5, vertical: 2),
+                                decoration: BoxDecoration(
+                                  color: AppColors.primary.withValues(alpha: 0.1),
+                                  borderRadius: BorderRadius.circular(6),
+                                ),
+                                child: const Text(
+                                  'HIỆN TẠI',
+                                  style: TextStyle(
+                                    color: AppColors.primary,
+                                    fontSize: 8.5,
+                                    fontWeight: FontWeight.bold,
+                                  ),
+                                ),
+                              ),
+                            ],
+                          ],
+                        ),
+                        const SizedBox(height: 2),
+                        Text(
+                          'Tạo lúc: ${u.createdAt.length >= 10 ? u.createdAt.substring(0, 10) : u.createdAt}',
+                          style: TextStyle(fontSize: 11, color: Colors.grey[500]),
+                        ),
+                      ],
+                    ),
+                  ),
+                  const SizedBox(width: 8),
                   Container(
-                    padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+                    padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
                     decoration: BoxDecoration(
                       color: isAdmin ? Colors.purple[50] : Colors.green[50],
                       borderRadius: BorderRadius.circular(8),
@@ -1266,17 +2007,19 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
                     child: Text(
                       u.role.toUpperCase(),
                       style: TextStyle(
-                        fontSize: 11,
+                        fontSize: 10.5,
                         fontWeight: FontWeight.bold,
                         color: isAdmin ? Colors.purple[700] : Colors.green[700],
                       ),
                     ),
                   ),
                   if (!isCurrent) ...[
-                    const SizedBox(width: 6),
+                    const SizedBox(width: 4),
                     IconButton(
+                      padding: EdgeInsets.zero,
+                      constraints: const BoxConstraints(),
                       icon: const Icon(Icons.delete_outline_rounded,
-                          color: Colors.redAccent, size: 20),
+                          color: Colors.redAccent, size: 22),
                       tooltip: 'Xóa tài khoản',
                       onPressed: () => _deleteUser(u),
                     ),

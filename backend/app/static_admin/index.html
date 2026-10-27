@@ -1,0 +1,461 @@
+<!DOCTYPE html>
+<html lang="vi">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>IELTS Vision - Cổng Quản Trị Hệ Thống (Admin Portal)</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css">
+  <link rel="stylesheet" href="style.css" />
+</head>
+<body>
+  <!-- Màn hình Đăng Nhập (Modal Overlay) -->
+  <div id="login-modal" class="auth-overlay">
+    <div class="auth-card">
+      <div class="auth-header">
+        <div class="brand-badge"><i class="fa-solid fa-graduation-cap"></i></div>
+        <h2>IELTS Vision Admin</h2>
+        <p>Cổng quản trị nội dung đề thi, 5 Ải vượt bài & Hệ thống AI</p>
+      </div>
+      <form id="login-form">
+        <div class="form-group">
+          <label for="login-username"><i class="fa-solid fa-user"></i> Tên đăng nhập</label>
+          <input type="text" id="login-username" value="admin" required placeholder="Nhập username admin" />
+        </div>
+        <div class="form-group">
+          <label for="login-password"><i class="fa-solid fa-lock"></i> Mật khẩu</label>
+          <input type="password" id="login-password" value="password123" required placeholder="Nhập mật khẩu" />
+        </div>
+        <div id="login-error" class="alert-error" style="display: none;"></div>
+        <button type="submit" class="btn btn-primary btn-block">
+          <i class="fa-solid fa-right-to-bracket"></i> Đăng nhập hệ thống
+        </button>
+      </form>
+      <div class="auth-hint">
+        <small><i class="fa-solid fa-circle-info"></i> Mặc định: <strong>admin</strong> / <strong>password123</strong></small>
+      </div>
+    </div>
+  </div>
+
+  <!-- Bố cục Chính Sau Khi Đăng Nhập -->
+  <div class="app-layout">
+    <!-- Sidebar -->
+    <aside class="sidebar">
+      <div class="sidebar-brand">
+        <div class="logo-icon"><i class="fa-solid fa-shield-halved"></i></div>
+        <div class="logo-text">
+          <h1>IELTS Vision</h1>
+          <span>Admin Portal Web</span>
+        </div>
+      </div>
+
+      <nav class="sidebar-nav">
+        <button class="nav-item active" data-tab="tab-kpis">
+          <i class="fa-solid fa-chart-pie"></i>
+          <span>Tổng quan KPIs</span>
+        </button>
+        <button class="nav-item" data-tab="tab-skills">
+          <i class="fa-solid fa-trophy"></i>
+          <span>4 Kỹ Năng & 5 Ải</span>
+          <span class="nav-badge" id="skills-badge">Mới</span>
+        </button>
+        <button class="nav-item" data-tab="tab-vocab">
+          <i class="fa-solid fa-brain"></i>
+          <span>Kho Từ Vựng AI (82)</span>
+        </button>
+        <button class="nav-item" data-tab="tab-users">
+          <i class="fa-solid fa-users-gear"></i>
+          <span>Quản lý Tài khoản</span>
+        </button>
+      </nav>
+
+      <div class="sidebar-footer">
+        <div class="user-profile">
+          <div class="user-avatar" id="current-user-avatar">AD</div>
+          <div class="user-info">
+            <span class="user-name" id="current-user-name">Quản trị viên</span>
+            <span class="user-role">Administrator</span>
+          </div>
+        </div>
+        <button id="btn-logout" class="btn-logout" title="Đăng xuất">
+          <i class="fa-solid fa-arrow-right-from-bracket"></i>
+        </button>
+      </div>
+    </aside>
+
+    <!-- Main Content Area -->
+    <main class="main-content">
+      <!-- Top Bar -->
+      <header class="topbar">
+        <div class="topbar-left">
+          <h2 id="page-title">Tổng quan KPIs Hệ thống</h2>
+          <span class="topbar-status"><i class="fa-solid fa-circle pulse-green"></i> Backend Online (:8000)</span>
+        </div>
+        <div class="topbar-right">
+          <a href="/api/v1/docs" target="_blank" class="btn btn-outline btn-sm">
+            <i class="fa-solid fa-book"></i> Swagger Docs
+          </a>
+          <button id="btn-refresh-data" class="btn btn-secondary btn-sm" title="Tải lại dữ liệu">
+            <i class="fa-solid fa-rotate"></i> Làm mới
+          </button>
+        </div>
+      </header>
+
+      <!-- TAB 1: TỔNG QUAN KPIS -->
+      <section id="tab-kpis" class="tab-pane active">
+        <div class="kpi-grid">
+          <div class="kpi-card card-purple">
+            <div class="kpi-icon"><i class="fa-solid fa-book-bookmark"></i></div>
+            <div class="kpi-info">
+              <span class="kpi-label">Tổng Từ Vựng AI</span>
+              <h3 class="kpi-value" id="kpi-mappings">82</h3>
+              <span class="kpi-sub">82 nhãn IELTS YOLOv8</span>
+            </div>
+          </div>
+          <div class="kpi-card card-blue">
+            <div class="kpi-icon"><i class="fa-solid fa-user-graduate"></i></div>
+            <div class="kpi-info">
+              <span class="kpi-label">Tổng Học Viên (Learners)</span>
+              <h3 class="kpi-value" id="kpi-learners">0</h3>
+              <span class="kpi-sub">Đang luyện 4 kỹ năng</span>
+            </div>
+          </div>
+          <div class="kpi-card card-emerald">
+            <div class="kpi-icon"><i class="fa-solid fa-users"></i></div>
+            <div class="kpi-info">
+              <span class="kpi-label">Tổng Tài Khoản</span>
+              <h3 class="kpi-value" id="kpi-users">0</h3>
+              <span class="kpi-sub">Admin & Học viên</span>
+            </div>
+          </div>
+          <div class="kpi-card card-amber">
+            <div class="kpi-icon"><i class="fa-solid fa-bookmark"></i></div>
+            <div class="kpi-info">
+              <span class="kpi-label">Từ Vựng Đã Lưu Sổ Tay</span>
+              <h3 class="kpi-value" id="kpi-notebook">0</h3>
+              <span class="kpi-sub">Lưu từ camera & bài học</span>
+            </div>
+          </div>
+        </div>
+
+        <div class="dashboard-row">
+          <div class="card flex-1">
+            <div class="card-header">
+              <h3><i class="fa-solid fa-chart-column"></i> Phân Bố Band Điểm Từ Vựng IELTS</h3>
+            </div>
+            <div class="card-body">
+              <div class="band-bars" id="band-distribution-container">
+                <!-- Sẽ nạp qua JS -->
+              </div>
+            </div>
+          </div>
+          <div class="card flex-1">
+            <div class="card-header">
+              <h3><i class="fa-solid fa-circle-nodes"></i> Kiến Trúc & Trạng Thái Hệ Thống</h3>
+            </div>
+            <div class="card-body">
+              <ul class="system-status-list">
+                <li>
+                  <span class="status-badge success"><i class="fa-solid fa-check"></i> Hoạt động</span>
+                  <strong>FastAPI Backend</strong>
+                  <p>Cung cấp REST API & Phân quyền RBAC JWT</p>
+                </li>
+                <li>
+                  <span class="status-badge success"><i class="fa-solid fa-check"></i> Đã kết nối</span>
+                  <strong>Cơ sở dữ liệu SQLite / Cloud</strong>
+                  <p>Lưu trữ đề thi, người dùng và 5 ải vượt bài</p>
+                </li>
+                <li>
+                  <span class="status-badge success"><i class="fa-solid fa-check"></i> Sẵn sàng</span>
+                  <strong>AI Vision Service</strong>
+                  <p>YOLOv8n Object Detection 82 COCO classes</p>
+                </li>
+              </ul>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <!-- TAB 2: QUẢN LÝ 4 KỸ NĂNG & 5 ẢI (TÂM ĐIỂM) -->
+      <section id="tab-skills" class="tab-pane">
+        <!-- Control Header -->
+        <div class="skills-header-bar">
+          <!-- Skill Selector Pills -->
+          <div class="skill-pills">
+            <button class="skill-pill active" data-skill="reading">
+              <i class="fa-solid fa-book-open"></i> Reading (Đọc hiểu)
+            </button>
+            <button class="skill-pill" data-skill="listening">
+              <i class="fa-solid fa-headphones"></i> Listening (Nghe hiểu)
+            </button>
+            <button class="skill-pill" data-skill="writing">
+              <i class="fa-solid fa-pen-nib"></i> Writing (Viết luận)
+            </button>
+            <button class="skill-pill" data-skill="speaking">
+              <i class="fa-solid fa-microphone"></i> Speaking (Luyện nói)
+            </button>
+          </div>
+
+          <!-- Actions -->
+          <div class="skill-actions">
+            <button id="btn-open-create-lesson" class="btn btn-primary">
+              <i class="fa-solid fa-circle-plus"></i> Thêm Đề Thi / Ải Mới
+            </button>
+            <button id="btn-open-import-modal" class="btn btn-success">
+              <i class="fa-solid fa-file-arrow-up"></i> Import File Đề Thi
+            </button>
+            <button id="btn-download-template" class="btn btn-outline">
+              <i class="fa-solid fa-file-code"></i> Tải File Mẫu (.json)
+            </button>
+          </div>
+        </div>
+
+        <!-- Filter Bar -->
+        <div class="filter-bar">
+          <div class="search-box">
+            <i class="fa-solid fa-magnifying-glass"></i>
+            <input type="text" id="skill-search-input" placeholder="Tìm kiếm theo tiêu đề hoặc chủ đề..." />
+          </div>
+          <div class="stage-filter">
+            <span class="filter-label">Lọc theo ải:</span>
+            <button class="stage-pill active" data-stage="all">Tất cả</button>
+            <button class="stage-pill" data-stage="1">Ải 1</button>
+            <button class="stage-pill" data-stage="2">Ải 2</button>
+            <button class="stage-pill" data-stage="3">Ải 3</button>
+            <button class="stage-pill" data-stage="4">Ải 4</button>
+            <button class="stage-pill" data-stage="5">Ải 5</button>
+          </div>
+        </div>
+
+        <!-- Lessons Container -->
+        <div id="skills-lessons-list" class="lessons-grid">
+          <!-- Render via JS -->
+        </div>
+      </section>
+
+      <!-- TAB 3: KHO TỪ VỰNG AI (82 LABELS) -->
+      <section id="tab-vocab" class="tab-pane">
+        <div class="vocab-header-bar">
+          <div class="search-box flex-1">
+            <i class="fa-solid fa-magnifying-glass"></i>
+            <input type="text" id="vocab-search-input" placeholder="Tìm kiếm nhãn AI (person, car...), từ học thuật (individual, vehicle...)" />
+          </div>
+          <div class="vocab-filters">
+            <select id="vocab-band-filter" class="form-select">
+              <option value="all">Tất cả Band Score</option>
+              <option value="Band 7.0">Band 7.0</option>
+              <option value="Band 7.5">Band 7.5</option>
+              <option value="Band 8.0">Band 8.0</option>
+              <option value="Band 8.5">Band 8.5</option>
+            </select>
+            <button id="btn-reset-mappings" class="btn btn-danger btn-sm" title="Khôi phục lại 82 nhãn chuẩn ban đầu">
+              <i class="fa-solid fa-arrow-rotate-left"></i> Khôi phục 82 nhãn gốc
+            </button>
+          </div>
+        </div>
+
+        <div class="table-card">
+          <table class="data-table">
+            <thead>
+              <tr>
+                <th width="70">ID</th>
+                <th width="140">Nhãn YOLO AI</th>
+                <th width="170">Từ Vựng Học Thuật</th>
+                <th width="120">Phiên Âm IPA</th>
+                <th width="90">Band</th>
+                <th>Nghĩa Tiếng Việt & Ngữ Cảnh IELTS</th>
+                <th width="110" class="text-center">Phát Âm</th>
+              </tr>
+            </thead>
+            <tbody id="vocab-table-body">
+              <!-- Render via JS -->
+            </tbody>
+          </table>
+        </div>
+      </section>
+
+      <!-- TAB 4: QUẢN LÝ TÀI KHOẢN (USERS) -->
+      <section id="tab-users" class="tab-pane">
+        <div class="users-header-bar">
+          <div>
+            <h3>Danh sách Tài khoản Hệ thống</h3>
+            <p>Quản lý phân quyền Quản trị viên (Admin) và Học viên (Learner)</p>
+          </div>
+          <button id="btn-open-create-user" class="btn btn-primary">
+            <i class="fa-solid fa-user-plus"></i> Thêm tài khoản mới
+          </button>
+        </div>
+
+        <div class="table-card">
+          <table class="data-table">
+            <thead>
+              <tr>
+                <th width="80">ID</th>
+                <th>Tên Đăng Nhập</th>
+                <th width="160">Vai Trò (Role)</th>
+                <th width="180">Ngày Tạo</th>
+                <th width="120" class="text-center">Thao Tác</th>
+              </tr>
+            </thead>
+            <tbody id="users-table-body">
+              <!-- Render via JS -->
+            </tbody>
+          </table>
+        </div>
+      </section>
+    </main>
+  </div>
+
+  <!-- MODAL: THÊM / CHỈNH SỬA BÀI THI & CẤU HÌNH ẢI -->
+  <div id="lesson-modal" class="modal-overlay">
+    <div class="modal-box modal-lg">
+      <div class="modal-header">
+        <h3 id="lesson-modal-title"><i class="fa-solid fa-file-pen"></i> Thêm mới Đề thi & Cấu hình Ải</h3>
+        <button class="modal-close">&times;</button>
+      </div>
+      <form id="lesson-form" class="modal-body">
+        <input type="hidden" id="lesson-edit-id" value="" />
+
+        <!-- Phần 1: Thông tin phân cấp ải -->
+        <div class="form-section-title">1. Thông tin Cơ bản & Phân cấp Ải</div>
+        <div class="form-row">
+          <div class="form-group flex-1">
+            <label>Kỹ Năng IELTS</label>
+            <select id="lesson-skill-type" class="form-select">
+              <option value="reading">📖 Reading (Đọc hiểu)</option>
+              <option value="listening">🎧 Listening (Nghe hiểu)</option>
+              <option value="writing">✍️ Writing (Viết luận)</option>
+              <option value="speaking">🗣️ Speaking (Luyện nói)</option>
+            </select>
+          </div>
+          <div class="form-group flex-1">
+            <label>Cấp độ Ải (Số nguyên >= 1)</label>
+            <input type="number" min="1" id="lesson-stage-number" value="1" class="form-input" required />
+          </div>
+
+          <div class="form-group flex-1">
+            <label>Target Band (Điểm mục tiêu)</label>
+            <input type="number" step="0.5" id="lesson-target-band" value="7.0" required />
+          </div>
+        </div>
+
+        <div class="form-row">
+          <div class="form-group flex-2">
+            <label>Tiêu đề bài thi / đề bài</label>
+            <input type="text" id="lesson-title" placeholder="VD: The Evolution of Renewable Energy Technologies" required />
+          </div>
+          <div class="form-group flex-1">
+            <label>Chủ đề (Category / Topic)</label>
+            <input type="text" id="lesson-topic" value="General" placeholder="VD: Environment, Technology..." required />
+          </div>
+        </div>
+
+        <!-- Phần 2: Điều kiện qua ải Gamification -->
+        <div class="form-section-title">2. Điều kiện Vượt Ải (Gamification Pass Condition)</div>
+        <div id="pass-condition-fields" class="form-row">
+          <!-- Dynamic per skill -->
+        </div>
+
+        <!-- Phần 3: Nội dung chi tiết bài học -->
+        <div class="form-section-title">3. Chi tiết Nội dung Đề thi</div>
+        <div id="skill-content-fields">
+          <!-- Dynamic per skill -->
+        </div>
+
+        <div class="modal-footer">
+          <button type="button" class="btn btn-secondary modal-close">Hủy bỏ</button>
+          <button type="submit" class="btn btn-primary" id="btn-save-lesson">
+            <i class="fa-solid fa-floppy-disk"></i> Lưu Đề Thi & Ải
+          </button>
+        </div>
+      </form>
+    </div>
+  </div>
+
+  <!-- MODAL: IMPORT FILE ĐỀ THI -->
+  <div id="import-modal" class="modal-overlay">
+    <div class="modal-box">
+      <div class="modal-header">
+        <h3><i class="fa-solid fa-cloud-arrow-up"></i> Nạp Hàng Loạt Đề Thi Từ File</h3>
+        <button class="modal-close">&times;</button>
+      </div>
+      <div class="modal-body">
+        <p class="modal-desc">
+          Tải lên file đề thi định dạng <strong>.json</strong>, <strong>.xlsx</strong> hoặc <strong>.csv</strong> để nạp hàng loạt đề thi mà không cần gõ từng câu:
+        </p>
+        
+        <div class="form-group">
+          <label>Kỹ năng cần import:</label>
+          <select id="import-skill-type" class="form-select">
+            <option value="reading">📖 Reading</option>
+            <option value="listening">🎧 Listening</option>
+            <option value="writing">✍️ Writing</option>
+            <option value="speaking">🗣️ Speaking</option>
+          </select>
+        </div>
+
+        <div class="drop-zone" id="file-drop-zone">
+          <i class="fa-solid fa-file-arrow-up drop-icon"></i>
+          <h4>Kéo thả file vào đây hoặc nhấp để chọn file</h4>
+          <span class="file-format-hint">Hỗ trợ: .json, .xlsx, .xls, .csv</span>
+          <input type="file" id="file-upload-input" accept=".json,.xlsx,.xls,.csv" style="display: none;" />
+          <div id="file-selected-info" class="file-info" style="display: none;"></div>
+        </div>
+
+        <div id="import-preview-box" class="preview-box" style="display: none;">
+          <div class="preview-header">
+            <span>Xem trước cấu trúc:</span>
+          </div>
+          <pre id="import-preview-content"></pre>
+        </div>
+      </div>
+      <div class="modal-footer">
+        <button type="button" class="btn btn-secondary modal-close">Đóng</button>
+        <button type="button" class="btn btn-success" id="btn-submit-import" disabled>
+          <i class="fa-solid fa-upload"></i> Bắt đầu nạp dữ liệu
+        </button>
+      </div>
+    </div>
+  </div>
+
+  <!-- MODAL: TẠO TÀI KHOẢN MỚI -->
+  <div id="user-modal" class="modal-overlay">
+    <div class="modal-box modal-sm">
+      <div class="modal-header">
+        <h3><i class="fa-solid fa-user-plus"></i> Thêm Tài Khoản Mới</h3>
+        <button class="modal-close">&times;</button>
+      </div>
+      <form id="user-form" class="modal-body">
+        <div class="form-group">
+          <label>Tên đăng nhập (Username)</label>
+          <input type="text" id="new-user-username" required placeholder="VD: teacher_lan, student_nam..." />
+        </div>
+        <div class="form-group">
+          <label>Mật khẩu</label>
+          <input type="password" id="new-user-password" required placeholder="Nhập mật khẩu" />
+        </div>
+        <div class="form-group">
+          <label>Vai trò (Role)</label>
+          <select id="new-user-role" class="form-select">
+            <option value="learner">Học viên (Learner)</option>
+            <option value="admin">Quản trị viên (Admin)</option>
+          </select>
+        </div>
+        <div class="modal-footer">
+          <button type="button" class="btn btn-secondary modal-close">Hủy</button>
+          <button type="submit" class="btn btn-primary">
+            <i class="fa-solid fa-check"></i> Tạo tài khoản
+          </button>
+        </div>
+      </form>
+    </div>
+  </div>
+
+  <!-- Toast Notification Container -->
+  <div id="toast-container" class="toast-container"></div>
+
+  <script src="app.js"></script>
+</body>
+</html>

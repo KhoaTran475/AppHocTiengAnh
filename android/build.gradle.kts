@@ -27,6 +27,20 @@ subprojects {
                     } catch (e: Exception) {}
                 }
             }
+            if (project.name == "file_picker") {
+                val androidExt = project.extensions.findByName("android")
+                if (androidExt != null) {
+                    try {
+                        val setCompileSdk = androidExt.javaClass.methods.find { it.name == "setCompileSdk" }
+                        setCompileSdk?.invoke(androidExt, 36)
+                    } catch (e: Exception) {}
+                    try {
+                        val setCompileSdkVersion = androidExt.javaClass.methods.find { it.name == "setCompileSdkVersion" }
+                        setCompileSdkVersion?.invoke(androidExt, 36)
+                    } catch (e: Exception) {}
+                }
+            }
+
             
             project.dependencies {
                 add("implementation", "androidx.concurrent:concurrent-futures:1.2.0")

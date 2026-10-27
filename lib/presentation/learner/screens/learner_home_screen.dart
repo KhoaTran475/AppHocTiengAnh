@@ -2,8 +2,10 @@ import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import '../../../core/database/database_helper.dart';
 import '../../../core/theme/app_theme.dart';
+import '../../../data/datasources/api_service.dart';
 import '../../../data/models/vocabulary_item_model.dart';
 import '../../auth/providers/auth_provider.dart';
+import '../../auth/widgets/face_scan_dialog.dart';
 import 'camera_scan_screen.dart';
 import 'vocabulary_notebook_screen.dart';
 import 'reading_practice_screen.dart';
@@ -103,16 +105,30 @@ class _LearnerDashboardTabState extends State<_LearnerDashboardTab> {
 
   Future<void> _loadStats() async {
     final user = context.read<AuthProvider>().currentUser;
-    if (user != null && user.id != null) {
-      final count = await DatabaseHelper.instance.getNotebookCountByUser(user.id!);
-      final words = await DatabaseHelper.instance.getNotebookItemsByUser(user.id!);
+    if (user != null) {
+      try {
+        final words = await ApiService.instance.getNotebookItems();
+        if (mounted) {
+          setState(() {
+            _savedWordsCount = words.length;
+            _recentWords = words.take(3).toList();
+            _isLoading = false;
+          });
+          return;
+        }
+      } catch (_) {}
 
-      if (mounted) {
-        setState(() {
-          _savedWordsCount = count;
-          _recentWords = words.take(3).toList();
-          _isLoading = false;
-        });
+      if (user.id != null) {
+        final count = await DatabaseHelper.instance.getNotebookCountByUser(user.id!);
+        final words = await DatabaseHelper.instance.getNotebookItemsByUser(user.id!);
+
+        if (mounted) {
+          setState(() {
+            _savedWordsCount = count;
+            _recentWords = words.take(3).toList();
+            _isLoading = false;
+          });
+        }
       }
     }
   }
@@ -382,19 +398,24 @@ class _LearnerDashboardTabState extends State<_LearnerDashboardTab> {
         Row(
           mainAxisAlignment: MainAxisAlignment.spaceBetween,
           children: [
-            const Text(
-              'Từ vựng vừa lưu gần đây',
-              style: TextStyle(
-                fontSize: 17,
-                fontWeight: FontWeight.bold,
-                color: AppColors.navy,
+            const Expanded(
+              child: Text(
+                'Từ vựng vừa lưu gần đây',
+                style: TextStyle(
+                  fontSize: 17,
+                  fontWeight: FontWeight.bold,
+                  color: AppColors.navy,
+                ),
+                overflow: TextOverflow.ellipsis,
               ),
             ),
-            if (_recentWords.isNotEmpty)
+            if (_recentWords.isNotEmpty) ...[
+              const SizedBox(width: 8),
               Text(
                 'Mới nhất',
                 style: TextStyle(fontSize: 13, color: Colors.grey[600]),
               ),
+            ],
           ],
         ),
         const SizedBox(height: 10),
@@ -489,7 +510,7 @@ class _LearnerDashboardTabState extends State<_LearnerDashboardTab> {
           physics: const NeverScrollableScrollPhysics(),
           mainAxisSpacing: 10,
           crossAxisSpacing: 10,
-          childAspectRatio: 2.2,
+          childAspectRatio: 2.0,
           children: [
             _buildSkillTile(
               Icons.headphones_rounded,
@@ -608,12 +629,173 @@ class _LearnerDashboardTabState extends State<_LearnerDashboardTab> {
 }
 
 /// Tab Thông tin cá nhân & Tài khoản (Profile)
-class _LearnerProfileTab extends StatelessWidget {
+/// Tích hợp Quản lý Bảo mật Sinh trắc học FaceID (Đăng ký, Trạng thái, Hủy)
+class _LearnerProfileTab extends StatefulWidget {
   const _LearnerProfileTab();
+
+  @override
+  State<_LearnerProfileTab> createState() => _LearnerProfileTabState();
+}
+
+class _LearnerProfileTabState extends State<_LearnerProfileTab> {
+  bool _isActionLoading = false;
+
+  /// Đăng ký FaceID cho tài khoản hiện tại:
+  /// 1. Lấy mã Nonce thử thách từ Backend (60s).
+  /// 2. Mở FaceScanDialog để quét khuôn mặt qua Camera trước.
+  /// 3. Gửi ảnh Base64 và Nonce lên Backend để trích xuất và lưu vector 128 số float.
+  Future<void> _registerFaceId() async {
+    setState(() => _isActionLoading = true);
+
+    try {
+      // BƯỚC 1: Lấy mã Nonce thử thách
+      final String nonce = await ApiService.instance.getFaceNonce();
+
+      if (!mounted) return;
+
+      // BƯỚC 2: Mở hộp thoại quét khuôn mặt FaceID
+      final scanResult = await FaceScanDialog.show(
+        context,
+        mode: FaceScanMode.register,
+        title: 'Đăng ký FaceID',
+        subtitle: 'Giữ gương mặt trong khung tròn để ghi nhận',
+      );
+
+      if (scanResult == null) {
+        if (mounted) setState(() => _isActionLoading = false);
+        return;
+      }
+
+      if (!mounted) return;
+
+      // BƯỚC 3: Gửi dữ liệu đăng ký khuôn mặt lên Backend
+      final res = await ApiService.instance.registerFace(
+        imageBase64: scanResult.imageBase64,
+        nonce: nonce,
+      );
+
+      if (!mounted) return;
+
+      // Cập nhật State trong AuthProvider
+      context.read<AuthProvider>().updateFaceAuthStatus(
+        isEnabled: true,
+        registeredAt: res['registered_at']?.toString(),
+      );
+
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: const Row(
+            children: [
+              Icon(Icons.check_circle_rounded, color: Colors.white),
+              SizedBox(width: 12),
+              Expanded(child: Text('Kích hoạt FaceID thành công! Giờ đây bạn có thể đăng nhập bằng khuôn mặt.')),
+            ],
+          ),
+          backgroundColor: Colors.green[700],
+          behavior: SnackBarBehavior.floating,
+          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+          duration: const Duration(seconds: 4),
+        ),
+      );
+    } catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(e.toString().replaceAll('Exception: ', '')),
+          backgroundColor: Colors.redAccent,
+          behavior: SnackBarBehavior.floating,
+        ),
+      );
+    } finally {
+      if (mounted) {
+        setState(() => _isActionLoading = false);
+      }
+    }
+  }
+
+  /// Hủy liên kết FaceID của tài khoản hiện tại:
+  /// Hiển thị Hộp thoại xác nhận trước khi gọi Backend DELETE
+  Future<void> _deleteFaceId() async {
+    final bool? confirm = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(18)),
+        title: const Row(
+          children: [
+            Icon(Icons.warning_amber_rounded, color: Colors.redAccent),
+            SizedBox(width: 10),
+            Text('Hủy liên kết FaceID', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 18)),
+          ],
+        ),
+        content: const Text(
+          'Bạn có chắc chắn muốn hủy đăng nhập bằng khuôn mặt cho tài khoản này?\n\n'
+          'Sau khi hủy, bạn sẽ cần đăng nhập bằng tên người dùng và mật khẩu thông thường.',
+          style: TextStyle(fontSize: 14, height: 1.4),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, false),
+            child: const Text('GIỮ LẠI'),
+          ),
+          ElevatedButton(
+            onPressed: () => Navigator.pop(ctx, true),
+            style: ElevatedButton.styleFrom(
+              backgroundColor: Colors.redAccent,
+              foregroundColor: Colors.white,
+              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+            ),
+            child: const Text('HỦY FACEID'),
+          ),
+        ],
+      ),
+    );
+
+    if (confirm != true || !mounted) return;
+
+    setState(() => _isActionLoading = true);
+
+    try {
+      await ApiService.instance.deleteFace();
+
+      if (!mounted) return;
+
+      context.read<AuthProvider>().updateFaceAuthStatus(isEnabled: false);
+
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: const Row(
+            children: [
+              Icon(Icons.check_circle_outline_rounded, color: Colors.white),
+              SizedBox(width: 12),
+              Text('Đã hủy liên kết FaceID thành công.'),
+            ],
+          ),
+          backgroundColor: Colors.grey[850],
+          behavior: SnackBarBehavior.floating,
+          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+          duration: const Duration(seconds: 3),
+        ),
+      );
+    } catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(e.toString().replaceAll('Exception: ', '')),
+          backgroundColor: Colors.redAccent,
+          behavior: SnackBarBehavior.floating,
+        ),
+      );
+    } finally {
+      if (mounted) {
+        setState(() => _isActionLoading = false);
+      }
+    }
+  }
 
   @override
   Widget build(BuildContext context) {
     final user = context.watch<AuthProvider>().currentUser;
+    final bool isFaceEnabled = user?.isFaceAuthEnabled ?? false;
 
     return Scaffold(
       backgroundColor: Colors.grey[50],
@@ -672,7 +854,7 @@ class _LearnerProfileTab extends StatelessWidget {
               ],
             ),
           ),
-          const SizedBox(height: 32),
+          const SizedBox(height: 28),
 
           // Thông tin tài khoản
           Container(
@@ -703,7 +885,173 @@ class _LearnerProfileTab extends StatelessWidget {
               ],
             ),
           ),
-          const SizedBox(height: 32),
+          const SizedBox(height: 24),
+
+          // --- KHỐI BẢO MẬT SINH TRẮC HỌC FACEID ---
+          Container(
+            padding: const EdgeInsets.all(18),
+            decoration: BoxDecoration(
+              color: Colors.white,
+              borderRadius: BorderRadius.circular(16),
+              border: Border.all(
+                color: isFaceEnabled ? Colors.green.withValues(alpha: 0.3) : Colors.grey[200]!,
+                width: isFaceEnabled ? 1.5 : 1,
+              ),
+              boxShadow: [
+                BoxShadow(
+                  color: isFaceEnabled
+                      ? Colors.green.withValues(alpha: 0.05)
+                      : Colors.black.withValues(alpha: 0.02),
+                  blurRadius: 10,
+                  offset: const Offset(0, 4),
+                ),
+              ],
+            ),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Row(
+                  children: [
+                    Container(
+                      padding: const EdgeInsets.all(10),
+                      decoration: BoxDecoration(
+                        color: isFaceEnabled
+                            ? Colors.green.withValues(alpha: 0.12)
+                            : Colors.grey.withValues(alpha: 0.12),
+                        borderRadius: BorderRadius.circular(12),
+                      ),
+                      child: Icon(
+                        Icons.face_retouching_natural_rounded,
+                        color: isFaceEnabled ? Colors.green[700] : Colors.grey[700],
+                        size: 26,
+                      ),
+                    ),
+                    const SizedBox(width: 14),
+                    Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          const Text(
+                            'Bảo mật FaceID',
+                            style: TextStyle(
+                              fontSize: 16,
+                              fontWeight: FontWeight.bold,
+                              color: AppColors.navy,
+                            ),
+                          ),
+                          const SizedBox(height: 2),
+                          Text(
+                            isFaceEnabled
+                                ? 'Đã kích hoạt đăng nhập sinh trắc học'
+                                : 'Chưa kích hoạt đăng nhập sinh trắc học',
+                            style: TextStyle(
+                              fontSize: 12,
+                              color: isFaceEnabled ? Colors.green[700] : Colors.grey[600],
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                    // Badge trạng thái
+                    Container(
+                      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+                      decoration: BoxDecoration(
+                        color: isFaceEnabled
+                            ? Colors.green.withValues(alpha: 0.15)
+                            : Colors.grey.withValues(alpha: 0.15),
+                        borderRadius: BorderRadius.circular(20),
+                      ),
+                      child: Text(
+                        isFaceEnabled ? 'ĐÃ BẬT' : 'CHƯA BẬT',
+                        style: TextStyle(
+                          fontSize: 11,
+                          fontWeight: FontWeight.bold,
+                          color: isFaceEnabled ? Colors.green[800] : Colors.grey[700],
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 16),
+                const Divider(height: 1),
+                const SizedBox(height: 16),
+
+                // Nút hành động: Đăng ký hoặc Hủy
+                if (!isFaceEnabled) ...[
+                  SizedBox(
+                    width: double.infinity,
+                    child: ElevatedButton.icon(
+                      onPressed: _isActionLoading ? null : _registerFaceId,
+                      icon: _isActionLoading
+                          ? const SizedBox(
+                              width: 18,
+                              height: 18,
+                              child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white),
+                            )
+                          : const Icon(Icons.add_a_photo_rounded, size: 20),
+                      label: Text(
+                        _isActionLoading ? 'ĐANG XỬ LÝ...' : 'ĐĂNG KÝ KHUÔN MẶT (FACEID)',
+                        style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 13),
+                      ),
+                      style: ElevatedButton.styleFrom(
+                        backgroundColor: AppColors.primary,
+                        foregroundColor: Colors.white,
+                        padding: const EdgeInsets.symmetric(vertical: 12),
+                        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                      ),
+                    ),
+                  ),
+                ] else ...[
+                  Row(
+                    children: [
+                      Expanded(
+                        child: OutlinedButton.icon(
+                          onPressed: _isActionLoading ? null : _registerFaceId,
+                          icon: const Icon(Icons.refresh_rounded, size: 18),
+                          label: const Text('CẬP NHẬT LẠI', style: TextStyle(fontSize: 12, fontWeight: FontWeight.bold)),
+                          style: OutlinedButton.styleFrom(
+                            foregroundColor: AppColors.navy,
+                            side: BorderSide(color: Colors.grey[300]!),
+                            padding: const EdgeInsets.symmetric(vertical: 12),
+                            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                          ),
+                        ),
+                      ),
+                      const SizedBox(width: 12),
+                      Expanded(
+                        child: OutlinedButton.icon(
+                          onPressed: _isActionLoading ? null : _deleteFaceId,
+                          icon: _isActionLoading
+                              ? const SizedBox(
+                                  width: 16,
+                                  height: 16,
+                                  child: CircularProgressIndicator(strokeWidth: 2, color: Colors.redAccent),
+                                )
+                              : const Icon(Icons.delete_outline_rounded, color: Colors.redAccent, size: 18),
+                          label: const Text(
+                            'HỦY FACEID',
+                            style: TextStyle(
+                              fontSize: 12,
+                              fontWeight: FontWeight.bold,
+                              color: Colors.redAccent,
+                            ),
+                          ),
+                          style: OutlinedButton.styleFrom(
+                            foregroundColor: Colors.redAccent,
+                            side: BorderSide(color: Colors.redAccent.withValues(alpha: 0.5)),
+                            backgroundColor: Colors.red.withValues(alpha: 0.04),
+                            padding: const EdgeInsets.symmetric(vertical: 12),
+                            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
+                ],
+              ],
+            ),
+          ),
+          const SizedBox(height: 28),
 
           // Nút Đăng xuất
           SizedBox(

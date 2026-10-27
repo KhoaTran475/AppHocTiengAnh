@@ -449,6 +449,20 @@ class DatabaseHelper {
     return await db.delete('Users', where: 'id = ?', whereArgs: [id]);
   }
 
+  /// Xác thực đăng nhập người dùng từ SQLite cục bộ (chế độ offline fallback)
+  Future<UserModel?> getUserByCredentials(String username, String password) async {
+    final db = await instance.database;
+    final results = await db.query(
+      'Users',
+      where: 'username = ? AND password = ?',
+      whereArgs: [username, password],
+    );
+    if (results.isNotEmpty) {
+      return UserModel.fromMap(results.first);
+    }
+    return null;
+  }
+
   /// Đóng cơ sở dữ liệu khi app dừng
   Future<void> close() async {
     final db = await instance.database;

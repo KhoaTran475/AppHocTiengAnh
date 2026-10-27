@@ -6,6 +6,7 @@ import '../../../core/theme/app_theme.dart';
 import '../../../core/vision/vision_service.dart';
 import '../../../data/models/object_mapping_model.dart';
 import '../../../data/models/vocabulary_item_model.dart';
+import '../../../data/datasources/api_service.dart';
 import '../../auth/providers/auth_provider.dart';
 
 /// Modal Bottom Sheet hiển thị chi tiết từ vựng IELTS Band 7.0 - 8.5
@@ -54,12 +55,20 @@ class _VocabularyDetailBottomSheetState
 
   Future<void> _loadVocabularyData() async {
     final label = widget.recognition.label;
-    final mapping = await DatabaseHelper.instance.getMappingByLabel(label);
+    ObjectMappingModel? mapping;
+    bool saved = false;
+
+    try {
+      mapping = await ApiService.instance.getMappingByLabel(label);
+      saved = await ApiService.instance.checkWordSaved(label);
+    } catch (_) {}
+
+    // Fallback SQLite nếu chưa nạp được qua API
+    mapping ??= await DatabaseHelper.instance.getMappingByLabel(label);
 
     if (!mounted) return;
     final currentUser = context.read<AuthProvider>().currentUser;
-    bool saved = false;
-    if (currentUser != null && currentUser.id != null) {
+    if (!saved && currentUser != null && currentUser.id != null) {
       saved = await DatabaseHelper.instance.isWordSaved(currentUser.id!, label);
     }
 
@@ -74,7 +83,7 @@ class _VocabularyDetailBottomSheetState
 
   Future<void> _saveToNotebook() async {
     final currentUser = context.read<AuthProvider>().currentUser;
-    if (currentUser == null || currentUser.id == null) {
+    if (currentUser == null) {
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(
           content: Text('Vui lòng đăng nhập để lưu từ vào sổ tay!'),
@@ -87,7 +96,7 @@ class _VocabularyDetailBottomSheetState
     if (_mapping == null) return;
 
     final item = VocabularyItemModel(
-      userId: currentUser.id!,
+      userId: currentUser.id ?? 1,
       label: _mapping!.label,
       word: _mapping!.academicWord.isNotEmpty
           ? _mapping!.academicWord
@@ -102,7 +111,11 @@ class _VocabularyDetailBottomSheetState
       createdAt: DateTime.now().toIso8601String(),
     );
 
-    await DatabaseHelper.instance.insertNotebookItem(item, username: currentUser.username);
+    try {
+      await ApiService.instance.saveToNotebook(item);
+    } catch (_) {
+      await DatabaseHelper.instance.insertNotebookItem(item, username: currentUser.username);
+    }
 
     if (mounted) {
       setState(() => _isSaved = true);

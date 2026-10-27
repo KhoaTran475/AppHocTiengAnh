@@ -2,8 +2,8 @@ import 'dart:developer';
 import 'package:flutter/material.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import '../../../core/database/database_helper.dart';
-import '../../../core/database/supabase_config.dart';
-import '../../../core/services/notebook_service.dart';
+import '../../../core/network/api_endpoints.dart';
+import '../../../data/datasources/api_service.dart';
 import '../../../data/models/user_model.dart';
 
 class AuthProvider extends ChangeNotifier {
@@ -19,59 +19,71 @@ class AuthProvider extends ChangeNotifier {
 
   Future<void> _loadSession() async {
     final prefs = await SharedPreferences.getInstance();
-    final userId = prefs.getInt('userId');
-    if (userId != null) {
-      final db = await DatabaseHelper.instance.database;
-      final maps = await db.query(
-        'Users',
-        where: 'id = ?',
-        whereArgs: [userId],
-      );
-      if (maps.isNotEmpty) {
-        _currentUser = UserModel.fromMap(maps.first);
-        notifyListeners();
+    final token = prefs.getString('access_token');
+    if (token != null && token.isNotEmpty) {
+      try {
+        final user = await ApiService.instance.getMe();
+        if (user != null) {
+          _currentUser = user;
+          notifyListeners();
+          return;
+        }
+      } catch (e) {
+        log('Lỗi khôi phục phiên đăng nhập từ API: $e');
       }
     }
 
-    // Tự động đồng bộ các tài khoản nội bộ lên Supabase profiles
-    await DatabaseHelper.instance.syncAllUsersToSupabase();
-
-    // Tự động đồng bộ Sổ tay từ vựng lên Supabase Cloud nếu đã đăng nhập
-    if (_currentUser != null && _currentUser!.id != null) {
-      NotebookService.syncNotebook(
-        localUserId: _currentUser!.id!,
-        username: _currentUser!.username,
-      );
+    final localUserId = prefs.getInt('userId');
+    if (localUserId != null) {
+      final allUsers = await DatabaseHelper.instance.getAllUsers();
+      final match = allUsers.where((u) => u.id == localUserId);
+      if (match.isNotEmpty) {
+        _currentUser = match.first;
+        notifyListeners();
+      }
     }
   }
 
   Future<String?> login(String username, String password) async {
     _setLoading(true);
     try {
-      final db = await DatabaseHelper.instance.database;
-      final maps = await db.query(
-        'Users',
-        where: 'username = ? AND password = ?',
-        whereArgs: [username, password],
-      );
+      final res = await ApiService.instance.login(username, password);
+      final token = res['token'] as String;
+      final user = res['user'] as UserModel;
 
-      if (maps.isNotEmpty) {
-        _currentUser = UserModel.fromMap(maps.first);
-        final prefs = await SharedPreferences.getInstance();
-        await prefs.setInt('userId', _currentUser!.id!);
-
-        // Đồng bộ sổ tay ngay sau khi đăng nhập thành công
-        NotebookService.syncNotebook(
-          localUserId: _currentUser!.id!,
-          username: _currentUser!.username,
-        );
-
-        return null; // Không có lỗi
-      } else {
-        return 'Tài khoản hoặc mật khẩu không chính xác';
+      final prefs = await SharedPreferences.getInstance();
+      await prefs.setString('access_token', token);
+      if (user.id != null) {
+        await prefs.setInt('userId', user.id!);
       }
+
+      _currentUser = user;
+      notifyListeners();
+      return null; // Thành công qua Backend
     } catch (e) {
-      return 'Có lỗi xảy ra: $e';
+      log('⚠️ Không thể kết nối API Server: $e. Thử đăng nhập Cục bộ...');
+      
+      // Fallback 1: Thử đối soát với SQLite Cục bộ
+      try {
+        final localUser = await DatabaseHelper.instance.getUserByCredentials(username, password);
+        if (localUser != null) {
+          _currentUser = localUser;
+          final prefs = await SharedPreferences.getInstance();
+          if (localUser.id != null) {
+            await prefs.setInt('userId', localUser.id!);
+          }
+          notifyListeners();
+          return null; // Đăng nhập offline thành công!
+        }
+      } catch (dbErr) {
+        log('Lỗi xác thực offline: $dbErr');
+      }
+
+      final errStr = e.toString().replaceAll('Exception: ', '');
+      if (errStr.contains('timeout') || errStr.contains('SocketException') || errStr.contains('connectTimeout') || errStr.contains('connection')) {
+        return 'Không thể kết nối Backend (${ApiEndpoints.baseUrl}).\n\n💡 Gợi ý:\n1. Đảm bảo điện thoại và máy tính kết nối CÙNG MẠNG WI-FI.\n2. Nhấn nút ⚙️ (Cài đặt Server) góc trên để chọn đúng IP máy tính.';
+      }
+      return errStr;
     } finally {
       _setLoading(false);
     }
@@ -80,66 +92,85 @@ class AuthProvider extends ChangeNotifier {
   Future<String?> register(String username, String password, {bool isAdmin = false}) async {
     _setLoading(true);
     try {
-      final db = await DatabaseHelper.instance.database;
-      // Kiểm tra trùng username
-      final check = await db.query('Users', where: 'username = ?', whereArgs: [username]);
-      if (check.isNotEmpty) return 'Tên đăng nhập đã tồn tại';
+      final res = await ApiService.instance.register(username, password, isAdmin: isAdmin);
+      final token = res['token'] as String;
+      final user = res['user'] as UserModel;
 
-      final roleStr = isAdmin ? 'admin' : 'learner';
-      final nowStr = DateTime.now().toIso8601String();
-
-      final newUser = {
-        'username': username,
-        'password': password,
-        'role': roleStr,
-        'createdAt': nowStr,
-      };
-      
-      final id = await db.insert('Users', newUser);
-      
-      _currentUser = UserModel(
-        id: id,
-        username: username,
-        role: roleStr,
-        createdAt: nowStr,
-      );
-      
       final prefs = await SharedPreferences.getInstance();
-      await prefs.setInt('userId', id);
-
-      // 🌐 ĐỒNG BỘ ĐẨY DỮ LIỆU TÀI KHOẢN ĐĂNG KÝ LÊN SUPABASE (PROFILES)
-      try {
-        // 1. Thử đăng ký Supabase Auth (tạo user trong auth.users)
-        try {
-          await SupabaseConfig.client.auth.signUp(
-            email: '$username@app.com',
-            password: password,
-            data: {'username': username, 'role': roleStr},
-          );
-        } catch (_) {}
-
-        // 2. Thử upsert trực tiếp vào bảng public.profiles
-        await SupabaseConfig.client.from('profiles').upsert({
-          'username': username,
-          'role': roleStr,
-          'created_at': nowStr,
-          'updated_at': nowStr,
-        }, onConflict: 'username');
-        log('✅ Đã đồng bộ tài khoản "$username" ($roleStr) lên Supabase profiles!');
-      } catch (e) {
-        log('⚠️ Lỗi đồng bộ tài khoản lên Supabase: $e');
+      await prefs.setString('access_token', token);
+      if (user.id != null) {
+        await prefs.setInt('userId', user.id!);
       }
 
+      _currentUser = user;
+      notifyListeners();
       return null;
     } catch (e) {
-      return 'Có lỗi xảy ra: $e';
+      return e.toString().replaceAll('Exception: ', '');
     } finally {
       _setLoading(false);
     }
   }
 
+  Future<String?> loginWithFace({
+    required String imageBase64,
+    required String nonce,
+    String? usernameHint,
+  }) async {
+    _setLoading(true);
+    try {
+      final res = await ApiService.instance.loginWithFace(
+        imageBase64: imageBase64,
+        nonce: nonce,
+        usernameHint: usernameHint,
+      );
+      final token = res['token'] as String;
+      final user = res['user'] as UserModel;
+
+      final prefs = await SharedPreferences.getInstance();
+      await prefs.setString('access_token', token);
+      if (user.id != null) {
+        await prefs.setInt('userId', user.id!);
+      }
+
+      _currentUser = user;
+      notifyListeners();
+      return null; // Đăng nhập FaceID thành công
+    } catch (e) {
+      log('Lỗi đăng nhập FaceID: $e');
+      return e.toString().replaceAll('Exception: ', '');
+    } finally {
+      _setLoading(false);
+    }
+  }
+
+  /// Cập nhật cờ FaceID trong user state hiện tại mà không cần re-login
+  void updateFaceAuthStatus({required bool isEnabled, String? registeredAt}) {
+    if (_currentUser != null) {
+      _currentUser = _currentUser!.copyWith(
+        isFaceAuthEnabled: isEnabled,
+        faceRegisteredAt: registeredAt ?? (isEnabled ? DateTime.now().toIso8601String() : null),
+      );
+      notifyListeners();
+    }
+  }
+
+  /// Làm mới thông tin user từ Backend
+  Future<void> refreshCurrentUser() async {
+    try {
+      final user = await ApiService.instance.getMe();
+      if (user != null) {
+        _currentUser = user;
+        notifyListeners();
+      }
+    } catch (e) {
+      log('Lỗi làm mới user info: $e');
+    }
+  }
+
   Future<void> logout() async {
     final prefs = await SharedPreferences.getInstance();
+    await prefs.remove('access_token');
     await prefs.remove('userId');
     _currentUser = null;
     notifyListeners();

@@ -46,6 +46,23 @@ class ObjectMappingModel {
     };
   }
 
+  /// Chuyển thành JSON gửi lên FastAPI Backend
+  Map<String, dynamic> toJson() {
+    return {
+      if (id != null) 'id': id,
+      'label': label,
+      'common_word': commonWord,
+      'vietnamese_meaning': vietnameseMeaning,
+      'academic_word': academicWord,
+      'ipa': ipa,
+      'band_score': bandScore,
+      'collocations': collocations,
+      'idioms': idioms,
+      'speaking_part1_example': speakingPart1Example,
+      'speaking_part1_translation': speakingPart1Translation,
+    };
+  }
+
   /// Khởi tạo từ Map của SQLite
   factory ObjectMappingModel.fromMap(Map<String, dynamic> map) {
     List<String> parsedCollocations = [];
@@ -83,16 +100,17 @@ class ObjectMappingModel {
     }
 
     return ObjectMappingModel(
+      id: json['id'] as int?,
       label: json['label'] as String? ?? '',
-      commonWord: json['common_word'] as String? ?? '',
-      vietnameseMeaning: json['vietnamese_meaning'] as String? ?? '',
-      academicWord: json['academic_word'] as String? ?? '',
+      commonWord: json['common_word'] as String? ?? json['commonWord'] as String? ?? '',
+      vietnameseMeaning: json['vietnamese_meaning'] as String? ?? json['vietnameseMeaning'] as String? ?? '',
+      academicWord: json['academic_word'] as String? ?? json['academicWord'] as String? ?? '',
       ipa: json['ipa'] as String? ?? '',
-      bandScore: json['band_score'] as String? ?? '7.0',
+      bandScore: json['band_score'] as String? ?? json['bandScore'] as String? ?? '7.0',
       collocations: parsedCollocations,
       idioms: json['idioms'] as String? ?? '',
-      speakingPart1Example: json['speaking_part1_example'] as String? ?? '',
-      speakingPart1Translation: json['speaking_part1_translation'] as String? ?? '',
+      speakingPart1Example: json['speaking_part1_example'] as String? ?? json['speakingPart1Example'] as String? ?? '',
+      speakingPart1Translation: json['speaking_part1_translation'] as String? ?? json['speakingPart1Translation'] as String? ?? '',
     );
   }
 
