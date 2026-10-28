@@ -155,9 +155,11 @@ function initEventListeners() {
   // Import File Drag & Drop
   initDropZone();
 
-  // Tab Vocab Search & Filter
+  // Tab Vocab Search & Filter & CRUD
   document.getElementById('vocab-search-input').addEventListener('input', renderVocabTable);
   document.getElementById('vocab-band-filter').addEventListener('change', renderVocabTable);
+  document.getElementById('btn-open-create-vocab').addEventListener('click', () => openVocabModal());
+  document.getElementById('vocab-form').addEventListener('submit', handleSaveVocab);
   document.getElementById('btn-reset-mappings').addEventListener('click', handleResetMappings);
 
   // Tab Users: Create User
@@ -912,24 +914,146 @@ function renderVocabTable() {
     );
   }
 
-  tbody.innerHTML = filtered.map(m => `
+  tbody.innerHTML = filtered.map(m => {
+    const collocs = Array.isArray(m.collocations) ? m.collocations.join('; ') : (m.collocations || '');
+    return `
     <tr>
       <td>#${m.id}</td>
-      <td><strong><code>${escapeHtml(m.label || '')}</code></strong></td>
+      <td>
+        <strong><code>${escapeHtml(m.label || '')}</code></strong>
+        ${m.common_word ? `<br><small style="color: var(--muted);">(${escapeHtml(m.common_word)})</small>` : ''}
+      </td>
       <td style="color: var(--primary); font-weight: 700;">${escapeHtml(m.academic_word || '')}</td>
       <td style="font-family: monospace; color: var(--muted);">${escapeHtml(m.ipa || '')}</td>
-      <td><span class="badge-band-score">Band ${m.band_score || '7.0'}</span></td>
+      <td><span class="badge-band-score">Band ${escapeHtml(String(m.band_score || '7.0').replace('Band ', ''))}</span></td>
       <td>
         <strong>${escapeHtml(m.vietnamese_meaning || '')}</strong>
-        ${m.ielts_context ? `<br><small style="color: var(--muted);">${escapeHtml(m.ielts_context)}</small>` : ''}
+        ${collocs ? `<br><small style="color: var(--muted);"><i class="fa-solid fa-layer-group"></i> Collocations: ${escapeHtml(collocs)}</small>` : ''}
+        ${m.idioms ? `<br><small style="color: #b45309;"><i class="fa-solid fa-lightbulb"></i> Idiom: ${escapeHtml(m.idioms)}</small>` : ''}
       </td>
       <td class="text-center">
-        <button class="btn-tts" onclick="speakWord('${escapeHtml(m.academic_word || m.label || '')}')" title="Nghe phát âm chuẩn AI">
-          <i class="fa-solid fa-volume-high"></i>
-        </button>
+        <div style="display: inline-flex; gap: 6px; align-items: center; justify-content: center;">
+          <button class="btn-tts" onclick="speakWord('${escapeHtml(m.academic_word || m.label || '')}')" title="Nghe phát âm chuẩn AI">
+            <i class="fa-solid fa-volume-high"></i>
+          </button>
+          <button class="btn-icon edit" onclick="openVocabModal(${m.id})" title="Chỉnh sửa từ vựng">
+            <i class="fa-solid fa-pen-to-square"></i>
+          </button>
+          <button class="btn-icon delete" onclick="handleDeleteVocab(${m.id}, '${escapeHtml(m.label || '')}')" title="Xóa nhãn từ vựng">
+            <i class="fa-solid fa-trash-can"></i>
+          </button>
+        </div>
       </td>
     </tr>
-  `).join('');
+  `;
+  }).join('');
+}
+
+function openVocabModal(vocabId = null) {
+  const modal = document.getElementById('vocab-modal');
+  const titleElem = document.getElementById('vocab-modal-title');
+
+  if (vocabId) {
+    const item = state.mappings.find(m => Number(m.id) === Number(vocabId));
+    if (!item) return;
+    titleElem.innerHTML = `<i class="fa-solid fa-pen-to-square"></i> Chỉnh sửa Từ Vựng AI (#${item.id} - ${escapeHtml(item.label)})`;
+    document.getElementById('vocab-edit-id').value = item.id;
+    document.getElementById('vocab-label').value = item.label || '';
+    document.getElementById('vocab-common-word').value = item.common_word || '';
+    document.getElementById('vocab-academic-word').value = item.academic_word || '';
+    document.getElementById('vocab-ipa').value = item.ipa || '';
+    const cleanBand = String(item.band_score || '8.0').replace('Band ', '').trim();
+    document.getElementById('vocab-band-score').value = ['7.0', '7.5', '8.0', '8.5'].includes(cleanBand) ? cleanBand : '8.0';
+    document.getElementById('vocab-meaning').value = item.vietnamese_meaning || '';
+    document.getElementById('vocab-collocations').value = Array.isArray(item.collocations)
+      ? item.collocations.join('; ')
+      : (item.collocations || '');
+    document.getElementById('vocab-idioms').value = item.idioms || '';
+    document.getElementById('vocab-speaking-example').value = item.speaking_part1_example || '';
+    document.getElementById('vocab-speaking-translation').value = item.speaking_part1_translation || '';
+  } else {
+    titleElem.innerHTML = `<i class="fa-solid fa-circle-plus"></i> Thêm Mới Nhãn Từ Vựng AI`;
+    document.getElementById('vocab-edit-id').value = '';
+    document.getElementById('vocab-form').reset();
+    document.getElementById('vocab-band-score').value = '8.0';
+  }
+
+  modal.classList.add('active');
+}
+
+async function handleSaveVocab(e) {
+  e.preventDefault();
+  const editId = document.getElementById('vocab-edit-id').value;
+  const label = document.getElementById('vocab-label').value.trim().toLowerCase();
+  const commonWord = document.getElementById('vocab-common-word').value.trim();
+  const academicWord = document.getElementById('vocab-academic-word').value.trim();
+  const ipa = document.getElementById('vocab-ipa').value.trim();
+  const bandScore = document.getElementById('vocab-band-score').value;
+  const meaning = document.getElementById('vocab-meaning').value.trim();
+  const collocations = document.getElementById('vocab-collocations').value
+    .split(';')
+    .map(s => s.trim())
+    .filter(Boolean);
+  const idioms = document.getElementById('vocab-idioms').value.trim();
+  const speakingExample = document.getElementById('vocab-speaking-example').value.trim();
+  const speakingTranslation = document.getElementById('vocab-speaking-translation').value.trim();
+
+  const payload = {
+    label,
+    common_word: commonWord,
+    academic_word: academicWord,
+    ipa,
+    band_score: bandScore,
+    vietnamese_meaning: meaning,
+    collocations,
+    idioms,
+    speaking_part1_example: speakingExample,
+    speaking_part1_translation: speakingTranslation,
+  };
+
+  const btn = document.getElementById('btn-save-vocab');
+  btn.disabled = true;
+  btn.innerHTML = `<i class="fa-solid fa-spinner fa-spin"></i> Đang lưu...`;
+
+  try {
+    if (editId) {
+      await apiRequest(`/vocabulary/mappings/${editId}`, {
+        method: 'PUT',
+        body: JSON.stringify(payload),
+      });
+      showToast(`Đã cập nhật từ vựng cho nhãn "${label}" thành công!`, 'success');
+    } else {
+      await apiRequest('/vocabulary/mappings', {
+        method: 'POST',
+        body: JSON.stringify(payload),
+      });
+      showToast(`Đã thêm nhãn từ vựng "${label}" thành công!`, 'success');
+    }
+
+    document.getElementById('vocab-modal').classList.remove('active');
+    await loadVocabMappings();
+    await loadKPIS();
+  } catch (err) {
+    showToast(`Lỗi lưu từ vựng: ${err.message}`, 'error');
+  } finally {
+    btn.disabled = false;
+    btn.innerHTML = `<i class="fa-solid fa-floppy-disk"></i> Lưu Từ Vựng AI`;
+  }
+}
+
+async function handleDeleteVocab(vocabId, label) {
+  if (!confirm(`Bạn có chắc muốn xóa nhãn từ vựng "${label}" (#${vocabId}) khỏi kho từ điển AI không?`)) {
+    return;
+  }
+
+  try {
+    await apiRequest(`/vocabulary/mappings/${vocabId}`, { method: 'DELETE' });
+    showToast(`Đã xóa nhãn "${label}" thành công!`, 'success');
+    await loadVocabMappings();
+    await loadKPIS();
+  } catch (err) {
+    showToast(`Lỗi xóa từ vựng: ${err.message}`, 'error');
+  }
 }
 
 function speakWord(word) {

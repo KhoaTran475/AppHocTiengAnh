@@ -24,16 +24,25 @@ class _CameraScanScreenState extends State<CameraScanScreen>
   CameraController? _cameraController;
   final VisionService _visionService = VisionService();
 
-  List<Recognition> _recognitions = [];
+  /// Dùng ValueNotifier để chỉ cập nhật lớp phủ BoundingBox & Badge mà KHÔNG rebuild CameraPreview mỗi frame
+  final ValueNotifier<List<Recognition>> _recognitionsNotifier =
+      ValueNotifier<List<Recognition>>([]);
+  final ValueNotifier<String> _debugInfoNotifier =
+      ValueNotifier<String>('Đang khởi tạo Camera & Model AI...');
+
   bool _isDetecting = false;
   bool _isCameraReady = false;
-  String _debugInfo = 'Đang khởi tạo Camera & Model AI...';
+  bool _isSheetOpen = false;
+  DateTime? _lastFrameTime;
 
   // Kích thước thực tế của camera preview (để căn chỉnh bounding box)
   Size? _previewSize;
 
   /// Ngưỡng confidence tối thiểu để HIỂN THỊ trên UI (0.40 giúp loại bỏ hoàn toàn các phỏng đoán nhiễu).
   static const double _displayThreshold = 0.40;
+
+  /// Khoảng cách tối thiểu giữa 2 lần gửi frame sang AI Isolate (ms) để giữ UI 60 FPS mượt mà
+  static const int _minFrameIntervalMs = 90;
 
   @override
   void initState() {
@@ -43,22 +52,28 @@ class _CameraScanScreenState extends State<CameraScanScreen>
   }
 
   Future<void> _initServices() async {
-    await _visionService.init();
-    await _initCamera();
+    // Khởi tạo Camera và AI Isolate song song để mở màn hình nhanh gấp đôi
+    await Future.wait([
+      _visionService.init(),
+      _initCamera(),
+    ]);
+    if (mounted && _visionService.lastError.isNotEmpty) {
+      _debugInfoNotifier.value = _visionService.lastError;
+    }
   }
 
   Future<void> _initCamera() async {
     final cameras = await availableCameras();
     if (cameras.isEmpty) {
       if (mounted) {
-        setState(() => _debugInfo = 'Không tìm thấy camera trên thiết bị');
+        _debugInfoNotifier.value = 'Không tìm thấy camera trên thiết bị';
       }
       return;
     }
 
     _cameraController = CameraController(
       cameras.first,
-      ResolutionPreset.medium, // 480p: tối ưu tốc độ xử lý frame
+      ResolutionPreset.medium, // 480p: tối ưu tốc độ xử lý frame và mượt 60fps
       enableAudio: false,
       imageFormatGroup: ImageFormatGroup.yuv420,
     );
@@ -71,42 +86,57 @@ class _CameraScanScreenState extends State<CameraScanScreen>
       _previewSize = _cameraController!.value.previewSize;
 
       // Bắt đầu stream xử lý từng frame hình ảnh
-      _cameraController!.startImageStream(_onCameraFrame);
+      await _cameraController!.startImageStream(_onCameraFrame);
 
-      setState(() {
-        _isCameraReady = true;
-        _debugInfo = _visionService.lastError;
-      });
+      if (mounted) {
+        setState(() {
+          _isCameraReady = true;
+        });
+        if (_visionService.lastError.isNotEmpty) {
+          _debugInfoNotifier.value = _visionService.lastError;
+        }
+      }
     } catch (e) {
       if (mounted) {
-        setState(() => _debugInfo = 'Lỗi khởi tạo camera: $e');
+        _debugInfoNotifier.value = 'Lỗi khởi tạo camera: $e';
       }
     }
   }
 
-  /// Callback xử lý frame camera chạy inference qua YOLOv8n
+  /// Callback xử lý frame camera chạy inference qua YOLOv8n Background Isolate
   Future<void> _onCameraFrame(CameraImage image) async {
-    if (_isDetecting) return;
+    if (_isDetecting || _isSheetOpen || !_visionService.isModelLoaded) return;
+
+    // Điều tiết tần suất gửi frame để tránh nghẽn hàng đợi camera buffer
+    final now = DateTime.now();
+    if (_lastFrameTime != null &&
+        now.difference(_lastFrameTime!).inMilliseconds < _minFrameIntervalMs) {
+      return;
+    }
+    _lastFrameTime = now;
     _isDetecting = true;
 
     try {
-      final results = await _visionService.processImage(image);
-      if (mounted) {
-        setState(() {
-          // Lọc danh sách nhận diện theo ngưỡng hiển thị
-          _recognitions = results
-              .where((r) => r.confidence >= _displayThreshold)
-              .toList();
-          _debugInfo = _visionService.lastError;
-        });
+      final int sensorOrientation =
+          _cameraController?.description.sensorOrientation ?? 90;
+      final results = await _visionService.processImage(
+        image,
+        rotationDegrees: sensorOrientation,
+      );
+      if (mounted && !_isSheetOpen) {
+        // Chỉ cập nhật ValueNotifier -> Không hề gây rebuild CameraPreview!
+        _recognitionsNotifier.value = results
+            .where((r) => r.confidence >= _displayThreshold)
+            .toList(growable: false);
+        _debugInfoNotifier.value = _visionService.lastError;
       }
     } catch (e) {
       if (mounted) {
-        setState(() => _debugInfo = 'Lỗi inference: $e');
+        _debugInfoNotifier.value = 'Lỗi inference: $e';
       }
+    } finally {
+      _isDetecting = false;
     }
-
-    _isDetecting = false;
   }
 
   @override
@@ -115,6 +145,8 @@ class _CameraScanScreenState extends State<CameraScanScreen>
     _cameraController?.stopImageStream().catchError((_) {});
     _cameraController?.dispose();
     _visionService.dispose();
+    _recognitionsNotifier.dispose();
+    _debugInfoNotifier.dispose();
     super.dispose();
   }
 
@@ -127,14 +159,23 @@ class _CameraScanScreenState extends State<CameraScanScreen>
       _cameraController?.stopImageStream().catchError((_) {});
       _cameraController?.dispose();
       _cameraController = null;
+      if (mounted) {
+        setState(() => _isCameraReady = false);
+      }
     } else if (state == AppLifecycleState.resumed) {
       _initCamera();
     }
   }
 
-  /// Hiện Modal Bottom Sheet từ vựng IELTS khi tap vào vật thể
-  void _showVocabularySheet(Recognition recognition) {
-    VocabularyDetailBottomSheet.show(context, recognition);
+  /// Hiện Modal Bottom Sheet từ vựng IELTS khi tap vào vật thể (tạm dừng AI khi đang mở sheet)
+  Future<void> _showVocabularySheet(Recognition recognition) async {
+    if (_isSheetOpen) return;
+    _isSheetOpen = true;
+    try {
+      await VocabularyDetailBottomSheet.show(context, recognition);
+    } finally {
+      _isSheetOpen = false;
+    }
   }
 
   @override
@@ -153,10 +194,13 @@ class _CameraScanScreenState extends State<CameraScanScreen>
               const SizedBox(height: 16),
               Padding(
                 padding: const EdgeInsets.symmetric(horizontal: 24),
-                child: Text(
-                  _debugInfo,
-                  style: const TextStyle(color: Colors.white70, fontSize: 14),
-                  textAlign: TextAlign.center,
+                child: ValueListenableBuilder<String>(
+                  valueListenable: _debugInfoNotifier,
+                  builder: (_, info, __) => Text(
+                    info,
+                    style: const TextStyle(color: Colors.white70, fontSize: 14),
+                    textAlign: TextAlign.center,
+                  ),
                 ),
               ),
             ],
@@ -170,11 +214,15 @@ class _CameraScanScreenState extends State<CameraScanScreen>
       body: Stack(
         fit: StackFit.expand,
         children: [
-          // ── Camera Preview (lấp đầy màn hình) ──
-          _buildCameraPreview(),
+          // ── Camera Preview được cô lập bằng RepaintBoundary (không bao giờ bị vẽ lại khi box cập nhật) ──
+          RepaintBoundary(
+            child: _buildCameraPreview(),
+          ),
 
-          // ── Bounding Boxes Overlay ──
-          _buildBoundingBoxes(),
+          // ── Bounding Boxes Overlay cô lập trong RepaintBoundary riêng ──
+          RepaintBoundary(
+            child: _buildBoundingBoxes(),
+          ),
 
           // ── Smart Tap Detector (Xử lý chạm thông minh, ưu tiên vật thể cụ thể như điện thoại) ──
           _buildSmartTapDetector(),
@@ -206,17 +254,23 @@ class _CameraScanScreenState extends State<CameraScanScreen>
     );
   }
 
-  /// Vẽ bounding boxes lên camera preview
+  /// Vẽ bounding boxes lên camera preview (chỉ repaint CustomPaint khi _recognitionsNotifier thay đổi)
   Widget _buildBoundingBoxes() {
     return LayoutBuilder(
       builder: (context, constraints) {
-        return CustomPaint(
-          size: Size(constraints.maxWidth, constraints.maxHeight),
-          painter: BoundingBoxPainter(
-            recognitions: _recognitions,
-            previewSize: _previewSize,
-            screenSize: Size(constraints.maxWidth, constraints.maxHeight),
-          ),
+        final screenSize = Size(constraints.maxWidth, constraints.maxHeight);
+        return ValueListenableBuilder<List<Recognition>>(
+          valueListenable: _recognitionsNotifier,
+          builder: (_, recognitions, __) {
+            return CustomPaint(
+              size: screenSize,
+              painter: BoundingBoxPainter(
+                recognitions: recognitions,
+                previewSize: _previewSize,
+                screenSize: screenSize,
+              ),
+            );
+          },
         );
       },
     );
@@ -243,11 +297,12 @@ class _CameraScanScreenState extends State<CameraScanScreen>
   /// Thuật toán Smart Tap Selection:
   /// Xử lý chính xác trường hợp chạm vào vật thể nhỏ (ví dụ điện thoại) nằm trên hoặc gần vật thể lớn (bàn, bàn phím)
   void _handleScreenTap(Offset tapPos, Size screenSize) {
-    if (_recognitions.isEmpty) return;
+    final recognitions = _recognitionsNotifier.value;
+    if (recognitions.isEmpty) return;
 
     final candidates = <Map<String, dynamic>>[];
 
-    for (final rec in _recognitions) {
+    for (final rec in recognitions) {
       final rect = _mapBBoxToScreen(rec.boundingBox, screenSize.width, screenSize.height);
       // Mở rộng vùng biên 15px để người dùng bấm trúng viền box vẫn nhận diện được
       final touchArea = rect.inflate(15.0);
@@ -268,7 +323,7 @@ class _CameraScanScreenState extends State<CameraScanScreen>
 
     if (candidates.isEmpty) {
       // Nếu chạm hơi chệch mép box: tìm kiếm box gần nhất trong bán kính 45px
-      for (final rec in _recognitions) {
+      for (final rec in recognitions) {
         final rect = _mapBBoxToScreen(rec.boundingBox, screenSize.width, screenSize.height);
         final touchArea = rect.inflate(45.0);
         if (touchArea.contains(tapPos)) {
@@ -351,35 +406,41 @@ class _CameraScanScreenState extends State<CameraScanScreen>
               ),
             ),
             // Trạng thái quét
-            Container(
-              padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
-              decoration: BoxDecoration(
-                color: _recognitions.isNotEmpty
-                    ? const Color(0xFF10B981).withValues(alpha: 0.9)
-                    : Colors.white.withValues(alpha: 0.2),
-                borderRadius: BorderRadius.circular(20),
-              ),
-              child: Row(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  Icon(
-                    _recognitions.isNotEmpty
-                        ? Icons.check_circle_rounded
-                        : Icons.radar_rounded,
-                    color: Colors.white,
-                    size: 16,
+            ValueListenableBuilder<List<Recognition>>(
+              valueListenable: _recognitionsNotifier,
+              builder: (_, recognitions, __) {
+                final hasDetections = recognitions.isNotEmpty;
+                return Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+                  decoration: BoxDecoration(
+                    color: hasDetections
+                        ? const Color(0xFF10B981).withValues(alpha: 0.9)
+                        : Colors.white.withValues(alpha: 0.2),
+                    borderRadius: BorderRadius.circular(20),
                   ),
-                  const SizedBox(width: 4),
-                  Text(
-                    _recognitions.isNotEmpty ? 'Detected' : 'Scanning...',
-                    style: const TextStyle(
-                      color: Colors.white,
-                      fontSize: 12,
-                      fontWeight: FontWeight.w600,
-                    ),
+                  child: Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Icon(
+                        hasDetections
+                            ? Icons.check_circle_rounded
+                            : Icons.radar_rounded,
+                        color: Colors.white,
+                        size: 16,
+                      ),
+                      const SizedBox(width: 4),
+                      Text(
+                        hasDetections ? 'Detected' : 'Scanning...',
+                        style: const TextStyle(
+                          color: Colors.white,
+                          fontSize: 12,
+                          fontWeight: FontWeight.w600,
+                        ),
+                      ),
+                    ],
                   ),
-                ],
-              ),
+                );
+              },
             ),
           ],
         ),
@@ -399,15 +460,18 @@ class _CameraScanScreenState extends State<CameraScanScreen>
           color: Colors.black.withValues(alpha: 0.65),
           borderRadius: BorderRadius.circular(12),
         ),
-        child: Text(
-          _debugInfo,
-          style: const TextStyle(
-            color: Colors.greenAccent,
-            fontSize: 12,
-            fontFamily: 'monospace',
-            height: 1.4,
+        child: ValueListenableBuilder<String>(
+          valueListenable: _debugInfoNotifier,
+          builder: (_, info, __) => Text(
+            info,
+            style: const TextStyle(
+              color: Colors.greenAccent,
+              fontSize: 12,
+              fontFamily: 'monospace',
+              height: 1.4,
+            ),
+            textAlign: TextAlign.center,
           ),
-          textAlign: TextAlign.center,
         ),
       ),
     );
@@ -415,49 +479,54 @@ class _CameraScanScreenState extends State<CameraScanScreen>
 
   /// Badge hướng dẫn người dùng chạm vào vật thể
   Widget _buildDetectionBadge() {
-    final hasDetections = _recognitions.isNotEmpty;
     return Positioned(
       bottom: MediaQuery.of(context).padding.bottom + 20,
       left: 0,
       right: 0,
       child: Center(
-        child: Container(
-          padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 10),
-          decoration: BoxDecoration(
-            color: Colors.black.withValues(alpha: 0.75),
-            borderRadius: BorderRadius.circular(30),
-            border: Border.all(
-              color: hasDetections
-                  ? const Color(0xFF10B981).withValues(alpha: 0.7)
-                  : AppColors.primary.withValues(alpha: 0.5),
-              width: 1.5,
-            ),
-          ),
-          child: Row(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              Icon(
-                hasDetections
-                    ? Icons.touch_app_rounded
-                    : Icons.camera_alt_rounded,
-                color: hasDetections
-                    ? const Color(0xFF10B981)
-                    : AppColors.primary,
-                size: 20,
-              ),
-              const SizedBox(width: 8),
-              Text(
-                hasDetections
-                    ? 'Chạm vào vật thể để học từ vựng (${_recognitions.length})'
-                    : 'Hướng camera vào vật thể xung quanh...',
-                style: const TextStyle(
-                  color: Colors.white,
-                  fontSize: 13,
-                  fontWeight: FontWeight.w500,
+        child: ValueListenableBuilder<List<Recognition>>(
+          valueListenable: _recognitionsNotifier,
+          builder: (_, recognitions, __) {
+            final hasDetections = recognitions.isNotEmpty;
+            return Container(
+              padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 10),
+              decoration: BoxDecoration(
+                color: Colors.black.withValues(alpha: 0.75),
+                borderRadius: BorderRadius.circular(30),
+                border: Border.all(
+                  color: hasDetections
+                      ? const Color(0xFF10B981).withValues(alpha: 0.7)
+                      : AppColors.primary.withValues(alpha: 0.5),
+                  width: 1.5,
                 ),
               ),
-            ],
-          ),
+              child: Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Icon(
+                    hasDetections
+                        ? Icons.touch_app_rounded
+                        : Icons.camera_alt_rounded,
+                    color: hasDetections
+                        ? const Color(0xFF10B981)
+                        : AppColors.primary,
+                    size: 20,
+                  ),
+                  const SizedBox(width: 8),
+                  Text(
+                    hasDetections
+                        ? 'Chạm vào vật thể để học từ vựng (${recognitions.length})'
+                        : 'Hướng camera vào vật thể xung quanh...',
+                    style: const TextStyle(
+                      color: Colors.white,
+                      fontSize: 13,
+                      fontWeight: FontWeight.w500,
+                    ),
+                  ),
+                ],
+              ),
+            );
+          },
         ),
       ),
     );

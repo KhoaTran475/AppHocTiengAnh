@@ -13,6 +13,7 @@ from app.schemas.skill import (
     StageItemProgress,
     SkillLessonCreateRequest,
     SkillLessonUpdateRequest,
+    LearnerAnalyticsResponse,
 )
 from app.core.supabase import get_supabase_admin
 
@@ -1360,9 +1361,19 @@ def grade_listening(lesson: SkillLesson, user_answers: Dict[str, str]) -> Dict[s
     }
 
 
+def _round_ielts_band(val: float) -> float:
+    """Làm tròn điểm theo chuẩn IELTS (bội số 0.5, giới hạn 4.0 - 9.0)."""
+    clamped = max(4.0, min(9.0, val))
+    return round(clamped * 2) / 2.0
+
+
 def grade_writing(lesson: SkillLesson, essay_text: str) -> Dict[str, Any]:
-    """Chấm điểm bài viết IELTS Writing tự động theo cơ chế Vượt ải."""
-    words = len(essay_text.strip().split()) if essay_text else 0
+    """Chấm điểm bài viết IELTS Writing chuyên sâu theo 4 tiêu chí chuẩn IELTS (AI Evaluator)."""
+    import re
+
+    raw_text = (essay_text or "").strip()
+    word_list = re.findall(r"[a-zA-Z']+", raw_text.lower())
+    words = len(word_list) if word_list else len(raw_text.split())
     pass_cond = lesson.pass_condition if isinstance(lesson.pass_condition, dict) else {}
     min_words = int(pass_cond.get("min_words") or lesson.content_json.get("minWordCount", 150))
     academic_vocab = lesson.content_json.get("academicVocabulary", [])
@@ -1370,30 +1381,74 @@ def grade_writing(lesson: SkillLesson, essay_text: str) -> Dict[str, Any]:
     if words < 25:
         raise ValueError("Bài viết quá ngắn (dưới 25 từ), vui lòng hoàn thiện thêm trước khi nộp bài!")
 
-    # Đếm từ học thuật xuất hiện
-    text_lower = essay_text.lower()
+    # 1. Phân tích Lexical Resource (Từ vựng học thuật & Độ đa dạng từ vựng)
+    text_lower = raw_text.lower()
     matched_vocab = []
     for v in academic_vocab:
         clean = v.split("(")[0].strip().lower()
         if clean and clean in text_lower:
             matched_vocab.append(clean)
 
-    bonus = len(matched_vocab)
+    unique_words = len(set(word_list))
+    lexical_diversity = round((unique_words / max(1, words)) * 100, 1)
+    long_words_count = sum(1 for w in word_list if len(w) >= 7)
+    long_word_ratio = long_words_count / max(1, words)
+
+    # 2. Phân tích Coherence & Cohesion (Từ nối học thuật & Chia đoạn)
+    linking_catalog = [
+        "furthermore", "moreover", "consequently", "nevertheless", "nonetheless",
+        "however", "therefore", "subsequently", "specifically", "notably",
+        "significantly", "whereas", "albeit", "in conclusion", "on the other hand",
+        "for instance", "for example", "in addition", "as a result", "conversely",
+    ]
+    linking_used = [lw for lw in linking_catalog if lw in text_lower]
+    paragraphs = [p.strip() for p in raw_text.split("\n") if len(p.strip()) > 20]
+    paragraph_count = max(1, len(paragraphs))
+
+    # 3. Phân tích Grammatical Range & Accuracy (Độ dài câu & Cấu trúc câu phức)
+    sentences = [s.strip() for s in re.split(r"[.!?]+", raw_text) if len(s.strip()) > 3]
+    sentence_count = max(1, len(sentences))
+    avg_sentence_len = round(words / sentence_count, 1)
+    complex_markers = [
+        "although", "even though", "while", "whereas", "which", "who", "whose",
+        "despite", "in spite of", "provided that", "not only", "had it not", "whether",
+    ]
+    complex_hits = sum(1 for m in complex_markers if m in text_lower)
 
     target_band_num = float(lesson.band_score_target.replace("+", ""))
     pass_band_req = float(pass_cond.get("min_band") or lesson.pass_score_required or 6.0)
 
-    # Thuật toán tính band score
-    if words < min_words * 0.7:
-        band_num = 5.5
-    elif words < min_words:
-        band_num = 6.0
-    elif bonus >= 3:
-        band_num = min(target_band_num, 8.5)
-    elif bonus >= 1:
-        band_num = max(6.5, target_band_num - 0.5)
+    # 4. Chấm điểm từng tiêu chí IELTS Writing
+    # (a) Task Response (TR)
+    length_ratio = words / max(1, min_words)
+    if length_ratio >= 1.1:
+        tr_score = min(8.5, target_band_num + 0.5)
+    elif length_ratio >= 1.0:
+        tr_score = target_band_num
+    elif length_ratio >= 0.8:
+        tr_score = max(5.5, target_band_num - 0.5)
     else:
-        band_num = max(6.0, target_band_num - 1.0)
+        tr_score = 5.0
+    tr_score = _round_ielts_band(tr_score)
+
+    # (b) Coherence & Cohesion (CC)
+    cc_base = 5.5 + min(1.5, len(linking_used) * 0.35) + (1.0 if paragraph_count >= 3 else 0.5 if paragraph_count == 2 else 0.0)
+    cc_score = _round_ielts_band(min(target_band_num + 0.5, cc_base))
+
+    # (c) Lexical Resource (LR)
+    bonus = len(matched_vocab)
+    lr_base = 5.5 + min(1.5, bonus * 0.45) + (0.5 if lexical_diversity >= 52 else 0.0) + (0.5 if long_word_ratio >= 0.22 else 0.0)
+    lr_score = _round_ielts_band(min(target_band_num + 0.5, lr_base))
+
+    # (d) Grammatical Range & Accuracy (GRA)
+    gra_base = 5.5 + min(1.5, complex_hits * 0.35) + (0.5 if 14 <= avg_sentence_len <= 28 else 0.0) + (0.5 if sentence_count >= 5 else 0.0)
+    gra_score = _round_ielts_band(min(target_band_num + 0.5, gra_base))
+
+    band_num = _round_ielts_band((tr_score + cc_score + lr_score + gra_score) / 4.0)
+    if words < min_words * 0.7:
+        band_num = min(band_num, 5.5)
+    elif words < min_words:
+        band_num = min(band_num, 6.0)
 
     band = f"{band_num:0.1f}" if band_num < 8.5 else "8.5+"
     passed = words >= min_words and band_num >= pass_band_req
@@ -1405,7 +1460,58 @@ def grade_writing(lesson: SkillLesson, essay_text: str) -> Dict[str, Any]:
     else:
         stars = 1 if words >= min_words * 0.7 else 0
 
-    feedback = f"Độ dài: {words} từ (Yêu cầu: {min_words} từ). Sử dụng {bonus} cụm từ học thuật chuẩn IELTS ({', '.join(matched_vocab) if matched_vocab else 'chưa có'}). Ước tính Band: {band}"
+    # Nhận xét ưu điểm & cần cải thiện
+    strengths = []
+    improvements = []
+    if words >= min_words:
+        strengths.append(f"Đảm bảo độ dài chuẩn học thuật ({words}/{min_words} từ).")
+    else:
+        improvements.append(f"Cần viết thêm ít nhất {min_words - words} từ để đạt yêu cầu tối thiểu ({min_words} từ).")
+
+    if bonus >= 2:
+        strengths.append(f"Vận dụng tốt {bonus} từ vựng học thuật chủ đề ({', '.join(matched_vocab)}).")
+    else:
+        missing_suggestions = [v.split("(")[0].strip() for v in academic_vocab[:3] if v.split("(")[0].strip().lower() not in matched_vocab]
+        if missing_suggestions:
+            improvements.append(f"Nên bổ sung các từ học thuật gợi ý như: {', '.join(missing_suggestions)}.")
+
+    if len(linking_used) >= 2:
+        strengths.append(f"Sử dụng linh hoạt các từ nối học thuật ({', '.join(linking_used[:4])}).")
+    else:
+        improvements.append("Hãy thêm các liên từ học thuật (Moreover, Consequently, Nevertheless, On the other hand) để tăng điểm Coherence & Cohesion.")
+
+    if paragraph_count >= 3:
+        strengths.append(f"Bố cục bài viết rõ ràng ({paragraph_count} đoạn văn).")
+    else:
+        improvements.append("Nên chia bài viết thành 3–4 đoạn rõ ràng (Introduction, Body 1, Body 2, Conclusion).")
+
+    if complex_hits >= 2:
+        strengths.append("Có sử dụng mệnh đề quan hệ và cấu trúc câu phức.")
+    else:
+        improvements.append("Tăng cường sử dụng câu phức (Although, Whereas, Which, Not only... but also) để nâng band Grammatical Range.")
+
+    ai_evaluation = {
+        "criteria_scores": {
+            "task_response": tr_score,
+            "coherence_cohesion": cc_score,
+            "lexical_resource": lr_score,
+            "grammatical_range": gra_score,
+        },
+        "word_count": words,
+        "min_words": min_words,
+        "sentence_count": sentence_count,
+        "paragraph_count": paragraph_count,
+        "avg_words_per_sentence": avg_sentence_len,
+        "lexical_diversity": lexical_diversity,
+        "matched_academic_vocab": matched_vocab,
+        "linking_words_used": linking_used,
+        "strengths": strengths,
+        "improvements": improvements,
+    }
+
+    feedback = (
+        f"Độ dài: {words}/{min_words} từ • TR: {tr_score} | CC: {cc_score} | LR: {lr_score} | GRA: {gra_score} → Overall Band: {band}."
+    )
     if passed:
         feedback = f"🎉 Vượt ải thành công! {feedback}"
     else:
@@ -1418,17 +1524,73 @@ def grade_writing(lesson: SkillLesson, essay_text: str) -> Dict[str, Any]:
         "passed": passed,
         "stars": stars,
         "feedback": feedback,
+        "ai_evaluation": ai_evaluation,
     }
 
 
-def grade_speaking(lesson: SkillLesson, ratings: Dict[str, int]) -> Dict[str, Any]:
-    """Ghi nhận và tính Band điểm hoàn thành bài nói IELTS Speaking theo cơ chế Vượt ải."""
-    fluency = ratings.get("fluency", 7)
-    vocab = ratings.get("vocabulary", 7)
-    pron = ratings.get("pronunciation", 7)
+def grade_speaking(
+    lesson: SkillLesson,
+    ratings: Dict[str, int],
+    spoken_transcript: Optional[str] = None,
+    duration_seconds: Optional[int] = None,
+) -> Dict[str, Any]:
+    """Chấm điểm bài nói IELTS Speaking kết hợp AI Speech/Transcript Analyzer & 4 tiêu chí IELTS."""
+    import re
 
-    avg = (fluency + vocab + pron) / 3.0
-    band = str(round(avg, 1))
+    fluency_in = float(ratings.get("fluency", 7))
+    vocab_in = float(ratings.get("vocabulary", 7))
+    pron_in = float(ratings.get("pronunciation", 7))
+
+    transcript = (spoken_transcript or "").strip()
+    collocations_target = lesson.content_json.get("part2Collocations", [])
+    part1_list = lesson.content_json.get("part1Questions", [])
+    part1_vocab = []
+    for p1 in part1_list:
+        if isinstance(p1, dict):
+            part1_vocab.extend(p1.get("keyVocabulary", []))
+
+    all_target_phrases = list(dict.fromkeys([*collocations_target, *part1_vocab]))
+    matched_collocations = []
+    discourse_used = []
+    word_count = 0
+    estimated_wpm = 0
+
+    if transcript:
+        t_lower = transcript.lower()
+        words_list = re.findall(r"[a-zA-Z']+", t_lower)
+        word_count = len(words_list)
+        dur = max(15, duration_seconds or 60)
+        estimated_wpm = round((word_count / dur) * 60)
+
+        for phrase in all_target_phrases:
+            clean_p = str(phrase).split("(")[0].strip().lower()
+            if clean_p and clean_p in t_lower:
+                matched_collocations.append(clean_p)
+
+        discourse_markers = [
+            "actually", "to be honest", "from my perspective", "personally",
+            "furthermore", "moreover", "in addition", "as a result", "for instance",
+            "when it comes to", "undoubtedly", "particularly",
+        ]
+        discourse_used = [dm for dm in discourse_markers if dm in t_lower]
+
+        # Tính điểm AI dựa trên Transcript + kết hợp đánh giá
+        fc_ai = 5.5 + (1.0 if word_count >= 50 else 0.5 if word_count >= 25 else 0.0) + min(1.5, len(discourse_used) * 0.4)
+        lr_ai = 5.5 + min(2.0, len(matched_collocations) * 0.5) + (0.5 if len(set(words_list)) >= 30 else 0.0)
+        gra_ai = 5.5 + (1.0 if word_count >= 40 else 0.5) + (0.5 if any(w in t_lower for w in ["although", "which", "because", "while", "despite"]) else 0.0)
+
+        fc_score = _round_ielts_band((fluency_in * 0.5) + (fc_ai * 0.5))
+        lr_score = _round_ielts_band((vocab_in * 0.5) + (lr_ai * 0.5))
+        gra_score = _round_ielts_band((fluency_in * 0.4 + vocab_in * 0.2) + (gra_ai * 0.4))
+        pron_score = _round_ielts_band(pron_in)
+    else:
+        fc_score = _round_ielts_band(fluency_in)
+        lr_score = _round_ielts_band(vocab_in)
+        gra_score = _round_ielts_band((fluency_in + vocab_in) / 2.0)
+        pron_score = _round_ielts_band(pron_in)
+
+    avg = _round_ielts_band((fc_score + lr_score + gra_score + pron_score) / 4.0)
+    band = f"{avg:0.1f}"
 
     pass_cond = lesson.pass_condition if isinstance(lesson.pass_condition, dict) else {}
     target_band_num = float(lesson.band_score_target.replace("+", ""))
@@ -1443,7 +1605,42 @@ def grade_speaking(lesson: SkillLesson, ratings: Dict[str, int]) -> Dict[str, An
     else:
         stars = 1 if avg >= 5.0 else 0
 
-    feedback = f"Hoàn thành bài luyện nói Speaking! Điểm Fluency: {fluency}, Vocab: {vocab}, Pronunciation: {pron}. Band trung bình: {band}"
+    strengths = []
+    improvements = []
+    if fc_score >= 7.0:
+        strengths.append("Độ trôi chảy và mạch lạc tốt (Fluency & Coherence đạt chuẩn học thuật).")
+    else:
+        improvements.append("Hãy mở rộng câu trả lời bằng các cụm dẫn dắt (From my perspective, To be honest, Furthermore).")
+
+    if matched_collocations:
+        strengths.append(f"Đã vận dụng thành công {len(matched_collocations)} cụm Collocations/Vocabulary mục tiêu ({', '.join(matched_collocations)}).")
+    elif all_target_phrases:
+        sample_Suggest = [str(p).split("(")[0].strip() for p in all_target_phrases[:3]]
+        improvements.append(f"Cố gắng lồng ghép các Collocations của bài vào phần nói: {', '.join(sample_Suggest)}.")
+
+    if pron_score >= 7.0:
+        strengths.append("Phát âm và ngữ điệu rõ ràng, tự tin.")
+    else:
+        improvements.append("Nghe lại Audio mẫu nhiều lần và luyện nhấn trọng âm từ (Word Stress) & ngữ điệu cuối câu.")
+
+    ai_evaluation = {
+        "criteria_scores": {
+            "fluency_coherence": fc_score,
+            "lexical_resource": lr_score,
+            "grammatical_range": gra_score,
+            "pronunciation": pron_score,
+        },
+        "word_count": word_count,
+        "estimated_wpm": estimated_wpm,
+        "matched_collocations": matched_collocations,
+        "discourse_markers_used": discourse_used,
+        "strengths": strengths,
+        "improvements": improvements,
+    }
+
+    feedback = (
+        f"FC: {fc_score} | LR: {lr_score} | GRA: {gra_score} | PRON: {pron_score} → Band Speaking: {band}."
+    )
     if passed:
         feedback = f"🎉 Vượt ải thành công! {feedback}"
     else:
@@ -1451,11 +1648,12 @@ def grade_speaking(lesson: SkillLesson, ratings: Dict[str, int]) -> Dict[str, An
 
     return {
         "score": int(avg * 3),
-        "total_questions": 30,
+        "total_questions": 27,
         "band_score": band,
         "passed": passed,
         "stars": stars,
         "feedback": feedback,
+        "ai_evaluation": ai_evaluation,
     }
 
 
@@ -1482,7 +1680,12 @@ def submit_lesson(
     elif req.skill_type == "writing":
         result = grade_writing(lesson, req.essay_text or "")
     elif req.skill_type == "speaking":
-        result = grade_speaking(lesson, req.ratings or {})
+        result = grade_speaking(
+            lesson,
+            req.ratings or {},
+            spoken_transcript=req.spoken_transcript,
+            duration_seconds=req.speaking_duration_seconds,
+        )
     else:
         raise ValueError(f"Kỹ năng '{req.skill_type}' không được hỗ trợ")
 
@@ -1597,6 +1800,7 @@ def submit_lesson(
         stars=result["stars"],
         feedback=result["feedback"],
         question_results=result.get("question_results"),
+        ai_evaluation=result.get("ai_evaluation"),
     )
 
 
@@ -1663,3 +1867,96 @@ def get_user_skill_progress(db: Session, user_id: int, skill_type: str = "listen
 def get_user_listening_progress(db: Session, user_id: int) -> ListeningProgressResponse:
     """Hàm wrapper tương thích ngược cho Listening."""
     return get_user_skill_progress(db, user_id, "listening")
+
+
+def get_learner_analytics(db: Session, user_id: int) -> LearnerAnalyticsResponse:
+    """Tính toán chuỗi ngày học liên tiếp (Daily Streak) & Biểu đồ năng lực 4 Kỹ năng IELTS."""
+    from datetime import date, timedelta
+
+    history_list = (
+        db.query(PracticeHistory)
+        .filter(PracticeHistory.user_id == user_id)
+        .order_by(PracticeHistory.created_at.desc())
+        .all()
+    )
+    stage_progress_list = (
+        db.query(UserStageProgress)
+        .filter(UserStageProgress.user_id == user_id)
+        .all()
+    )
+
+    total_stars = sum(p.stars for p in stage_progress_list)
+    total_tests = len(history_list)
+
+    # 1. Tính điểm trung bình theo từng kỹ năng (Listening, Reading, Speaking, Writing)
+    skill_scores: Dict[str, List[float]] = {
+        "listening": [],
+        "reading": [],
+        "speaking": [],
+        "writing": [],
+    }
+    skill_attempts: Dict[str, int] = {
+        "listening": 0,
+        "reading": 0,
+        "speaking": 0,
+        "writing": 0,
+    }
+
+    active_dates = set()
+    for item in history_list:
+        sk = (item.skill_type or "").strip().lower()
+        if sk in skill_attempts:
+            skill_attempts[sk] += 1
+            try:
+                b_val = float(str(item.band_score).replace("+", "").replace("Band", "").strip())
+                if 0 < b_val <= 9.0:
+                    skill_scores[sk].append(b_val)
+            except Exception:
+                pass
+        if item.created_at:
+            active_dates.add(item.created_at.date())
+
+    for prog in stage_progress_list:
+        if prog.updated_at and prog.stars > 0:
+            active_dates.add(prog.updated_at.date())
+
+    skill_bands: Dict[str, float] = {}
+    non_zero_bands: List[float] = []
+    for sk, vals in skill_scores.items():
+        if vals:
+            avg_sk = _round_ielts_band(sum(vals) / len(vals))
+            skill_bands[sk] = avg_sk
+            non_zero_bands.append(avg_sk)
+        else:
+            skill_bands[sk] = 0.0
+
+    overall_band = _round_ielts_band(sum(non_zero_bands) / len(non_zero_bands)) if non_zero_bands else 0.0
+
+    # 2. Tính chuỗi ngày học liên tiếp (Daily Streak)
+    today = datetime.utcnow().date()
+    is_active_today = today in active_dates
+
+    streak = 0
+    check_day = today if is_active_today else (today - timedelta(days=1))
+    while check_day in active_dates:
+        streak += 1
+        check_day -= timedelta(days=1)
+
+    # Các ngày trong tuần hiện tại (Thứ 2 = 1 ... Chủ nhật = 7) có hoạt động học tập
+    monday = today - timedelta(days=today.weekday())
+    active_weekdays = []
+    for i in range(7):
+        d = monday + timedelta(days=i)
+        if d in active_dates:
+            active_weekdays.append(i + 1)
+
+    return LearnerAnalyticsResponse(
+        streak_days=streak,
+        is_active_today=is_active_today,
+        total_tests_completed=total_tests,
+        total_stars_earned=total_stars,
+        overall_band=overall_band,
+        skill_bands=skill_bands,
+        skill_attempts=skill_attempts,
+        active_weekdays=active_weekdays,
+    )

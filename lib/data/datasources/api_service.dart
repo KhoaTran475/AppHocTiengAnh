@@ -499,6 +499,8 @@ class ApiService {
     Map<String, dynamic>? answers,
     String? essayText,
     Map<String, int>? ratings,
+    String? spokenTranscript,
+    int? speakingDurationSeconds,
     String? lessonTitle,
     int? score,
     int? totalQuestions,
@@ -514,12 +516,26 @@ class ApiService {
           if (answers != null) 'answers': answers,
           if (essayText != null) 'essay_text': essayText,
           if (ratings != null) 'ratings': ratings,
+          if (spokenTranscript != null && spokenTranscript.trim().isNotEmpty)
+            'spoken_transcript': spokenTranscript.trim(),
+          if (speakingDurationSeconds != null)
+            'speaking_duration_seconds': speakingDurationSeconds,
           if (taskType != null) 'task_type': taskType,
         },
       );
       return res.data as Map<String, dynamic>;
     } on DioException catch (e) {
       throw Exception(e.response?.data?['detail'] ?? 'Lỗi nộp bài thi');
+    }
+  }
+
+  Future<Map<String, dynamic>> getLearnerAnalytics() async {
+    try {
+      final res = await _dio.get(ApiEndpoints.skillAnalytics);
+      return res.data as Map<String, dynamic>;
+    } catch (e) {
+      log('Lỗi tải thống kê học tập: $e');
+      return {};
     }
   }
 

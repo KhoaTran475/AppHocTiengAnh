@@ -55,6 +55,7 @@ class ApiEndpoints {
   static String lessonDetail(String id) => '$baseUrl/skills/lessons/$id';
   static String get submitTest => '$baseUrl/skills/submit';
   static String get history => '$baseUrl/skills/history';
+  static String get skillAnalytics => '$baseUrl/skills/analytics';
   static String skillProgress(String skill) => '$baseUrl/skills/$skill/progress';
   static String get listeningProgress => skillProgress('listening');
 

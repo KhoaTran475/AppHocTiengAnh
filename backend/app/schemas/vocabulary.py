@@ -20,6 +20,7 @@ class ObjectMappingCreate(ObjectMappingBase):
 
 
 class ObjectMappingUpdate(BaseModel):
+    label: Optional[str] = None
     common_word: Optional[str] = None
     vietnamese_meaning: Optional[str] = None
     academic_word: Optional[str] = None

@@ -250,6 +250,9 @@
               <option value="Band 8.0">Band 8.0</option>
               <option value="Band 8.5">Band 8.5</option>
             </select>
+            <button id="btn-open-create-vocab" class="btn btn-primary btn-sm" title="Thêm nhãn từ vựng AI mới">
+              <i class="fa-solid fa-circle-plus"></i> Thêm Nhãn AI Mới
+            </button>
             <button id="btn-reset-mappings" class="btn btn-danger btn-sm" title="Khôi phục lại 82 nhãn chuẩn ban đầu">
               <i class="fa-solid fa-arrow-rotate-left"></i> Khôi phục 82 nhãn gốc
             </button>
@@ -260,13 +263,13 @@
           <table class="data-table">
             <thead>
               <tr>
-                <th width="70">ID</th>
-                <th width="140">Nhãn YOLO AI</th>
-                <th width="170">Từ Vựng Học Thuật</th>
-                <th width="120">Phiên Âm IPA</th>
-                <th width="90">Band</th>
-                <th>Nghĩa Tiếng Việt & Ngữ Cảnh IELTS</th>
-                <th width="110" class="text-center">Phát Âm</th>
+                <th width="65">ID</th>
+                <th width="135">Nhãn YOLO AI</th>
+                <th width="175">Từ Vựng Học Thuật</th>
+                <th width="125">Phiên Âm IPA</th>
+                <th width="85">Band</th>
+                <th>Nghĩa Tiếng Việt & Học Thuật IELTS</th>
+                <th width="140" class="text-center">Thao Tác</th>
               </tr>
             </thead>
             <tbody id="vocab-table-body">
@@ -417,6 +420,82 @@
           <i class="fa-solid fa-upload"></i> Bắt đầu nạp dữ liệu
         </button>
       </div>
+    </div>
+  </div>
+
+  <!-- MODAL: THÊM / SỬA TỪ VỰNG AI (OBJECT MAPPINGS) -->
+  <div id="vocab-modal" class="modal-overlay">
+    <div class="modal-box modal-lg">
+      <div class="modal-header">
+        <h3 id="vocab-modal-title"><i class="fa-solid fa-brain"></i> Thêm Mới Nhãn Từ Vựng AI</h3>
+        <button class="modal-close">&times;</button>
+      </div>
+      <form id="vocab-form" class="modal-body">
+        <input type="hidden" id="vocab-edit-id" value="" />
+
+        <div class="form-row">
+          <div class="form-group flex-1">
+            <label>Nhãn YOLO (COCO Label)</label>
+            <input type="text" id="vocab-label" placeholder="VD: laptop, cell phone, backpack..." required />
+          </div>
+          <div class="form-group flex-1">
+            <label>Từ thông dụng (Common Word)</label>
+            <input type="text" id="vocab-common-word" placeholder="VD: laptop, mobile phone..." required />
+          </div>
+        </div>
+
+        <div class="form-row">
+          <div class="form-group flex-2">
+            <label>Từ Vựng Học Thuật IELTS (Academic Target Word)</label>
+            <input type="text" id="vocab-academic-word" placeholder="VD: Portable computational device" required />
+          </div>
+          <div class="form-group flex-1">
+            <label>Phiên Âm IPA</label>
+            <input type="text" id="vocab-ipa" placeholder="VD: /ˈpɔː.tə.bəl dɪˈvaɪs/" required />
+          </div>
+          <div class="form-group flex-1">
+            <label>Band IELTS</label>
+            <select id="vocab-band-score" class="form-select">
+              <option value="7.0">Band 7.0</option>
+              <option value="7.5">Band 7.5</option>
+              <option value="8.0" selected>Band 8.0</option>
+              <option value="8.5">Band 8.5</option>
+            </select>
+          </div>
+        </div>
+
+        <div class="form-group">
+          <label>Nghĩa Tiếng Việt 🇻🇳</label>
+          <input type="text" id="vocab-meaning" placeholder="VD: Máy tính xách tay, thiết bị tính toán di động" required />
+        </div>
+
+        <div class="form-group">
+          <label>Collocations học thuật (phân tách bằng dấu chấm phẩy <code>;</code>)</label>
+          <input type="text" id="vocab-collocations" placeholder="VD: ubiquitous digital tool; facilitate remote work; technological proficiency" />
+        </div>
+
+        <div class="form-group">
+          <label>Topic Idiom & Dịch nghĩa</label>
+          <input type="text" id="vocab-idioms" placeholder="VD: At the push of a button (Dễ dàng, chỉ bằng một nút bấm)" />
+        </div>
+
+        <div class="form-group">
+          <label>IELTS Speaking Part 1 Sample (Tiếng Anh)</label>
+          <textarea id="vocab-speaking-example" rows="2" placeholder="VD: A portable computational device is indispensable for my academic research..."></textarea>
+        </div>
+
+        <div class="form-group">
+          <label>Dịch nghĩa câu Speaking (Tiếng Việt)</label>
+          <textarea id="vocab-speaking-translation" rows="2" placeholder="VD: Một thiết bị tính toán di động là không thể thiếu cho việc nghiên cứu học thuật của tôi..."></textarea>
+        </div>
+
+        <div class="modal-footer">
+          <button type="button" class="btn btn-secondary modal-close">Hủy bỏ</button>
+          <button type="submit" class="btn btn-primary" id="btn-save-vocab">
+            <i class="fa-solid fa-floppy-disk"></i> Lưu Từ Vựng AI
+          </button>
+        </div>
+      </form>
     </div>
   </div>
 

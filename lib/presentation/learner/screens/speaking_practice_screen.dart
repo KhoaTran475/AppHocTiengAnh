@@ -41,11 +41,14 @@ class _SpeakingPracticeScreenState extends State<SpeakingPracticeScreen> {
   bool _isPlayingAudio = false;
   final double _speechRate = 0.45; // Tốc độ đọc tự nhiên chuẩn IELTS
 
-  // Bộ đánh giá hoàn thành bài nói
+  // Bộ đánh giá hoàn thành bài nói & Chấm điểm AI
   bool _isSubmitted = false;
   int _fluencyRating = 8;
   int _vocabularyRating = 8;
   int _pronunciationRating = 7;
+  final TextEditingController _transcriptController = TextEditingController();
+  Map<String, dynamic>? _aiEvaluation;
+  String _submittedBand = '7.5';
 
   // Trạng thái Vượt ải Gamification (Theme Tím / Violet)
   int _highestUnlockedStage = 1;
@@ -153,6 +156,7 @@ class _SpeakingPracticeScreenState extends State<SpeakingPracticeScreen> {
   @override
   void dispose() {
     _timer?.cancel();
+    _transcriptController.dispose();
     _flutterTts.stop();
     super.dispose();
   }
@@ -164,6 +168,8 @@ class _SpeakingPracticeScreenState extends State<SpeakingPracticeScreen> {
     setState(() {
       _selectedLesson = lesson;
       _isSubmitted = false;
+      _aiEvaluation = null;
+      _transcriptController.clear();
       _isPlayingAudio = false;
       _isTimerRunning = false;
       _secondsLeft = 60;
@@ -245,7 +251,8 @@ class _SpeakingPracticeScreenState extends State<SpeakingPracticeScreen> {
     final currentUser = context.read<AuthProvider>().currentUser;
     final userId = currentUser?.id ?? 1;
 
-    // 1. Gửi kết quả tới FastAPI Backend
+    // 1. Gửi kết quả tới FastAPI Backend kèm bản ghi lời nói (nếu có)
+    Map<String, dynamic> evalData = _computeLocalSpeakingAiEvaluation();
     bool apiSynced = false;
     try {
       final res = await ApiService.instance.submitTest(
@@ -256,6 +263,8 @@ class _SpeakingPracticeScreenState extends State<SpeakingPracticeScreen> {
           'vocabulary': _vocabularyRating,
           'pronunciation': _pronunciationRating,
         },
+        spokenTranscript: _transcriptController.text,
+        speakingDurationSeconds: 90,
       );
       apiSynced = true;
       if (res['band_score'] != null) {
@@ -263,11 +272,16 @@ class _SpeakingPracticeScreenState extends State<SpeakingPracticeScreen> {
       }
       if (res['passed'] != null) isPassed = res['passed'] as bool;
       if (res['stars'] != null) calculatedStars = res['stars'] as int;
+      if (res['ai_evaluation'] is Map<String, dynamic>) {
+        evalData = res['ai_evaluation'] as Map<String, dynamic>;
+      }
     } catch (_) {}
 
     if (!mounted) return;
 
     setState(() {
+      _submittedBand = bandScore;
+      _aiEvaluation = evalData;
       _isSubmitted = true;
     });
 
@@ -1028,7 +1042,95 @@ class _SpeakingPracticeScreenState extends State<SpeakingPracticeScreen> {
     );
   }
 
-  /// Phần đánh giá hoàn thành & Đồng bộ Supabase
+  /// Phân tích lời nói (Transcript) bằng AI cục bộ & tự động gợi ý thanh trượt 3 tiêu chí
+  void _analyzeTranscriptWithAi() {
+    final text = _transcriptController.text.trim();
+    if (text.isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Hãy nhập hoặc dùng bàn phím giọng nói (🎙️) đọc câu trả lời của bạn để AI phân tích!'),
+          backgroundColor: _violetColor,
+        ),
+      );
+      return;
+    }
+
+    final eval = _computeLocalSpeakingAiEvaluation();
+    final criteria = eval['criteria_scores'] as Map<String, dynamic>? ?? {};
+    final fc = ((criteria['fluency_coherence'] as num?)?.toDouble() ?? 7.0).round().clamp(4, 9);
+    final lr = ((criteria['lexical_resource'] as num?)?.toDouble() ?? 7.0).round().clamp(4, 9);
+    final pron = ((criteria['pronunciation'] as num?)?.toDouble() ?? 7.0).round().clamp(4, 9);
+
+    setState(() {
+      _fluencyRating = fc;
+      _vocabularyRating = lr;
+      _pronunciationRating = pron;
+      _aiEvaluation = eval;
+    });
+
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        backgroundColor: Colors.green[700],
+        content: Text(
+          '✨ AI đã phân tích bài nói (${eval['word_count']} từ) và tự động cập nhật điểm đánh giá!',
+        ),
+      ),
+    );
+  }
+
+  Map<String, dynamic> _computeLocalSpeakingAiEvaluation() {
+    final raw = _transcriptController.text.trim();
+    final tLower = raw.toLowerCase();
+    final words = RegExp(r"[a-zA-Z']+").allMatches(tLower).map((m) => m.group(0)!).toList();
+    final wordCount = words.length;
+
+    final matchedCollocs = <String>[];
+    for (final c in _selectedLesson.part2Collocations) {
+      final clean = c.split('(').first.trim().toLowerCase();
+      if (clean.isNotEmpty && tLower.contains(clean)) {
+        matchedCollocs.add(clean);
+      }
+    }
+
+    double fc = _fluencyRating.toDouble();
+    double lr = _vocabularyRating.toDouble();
+    double gra = ((_fluencyRating + _vocabularyRating) / 2.0);
+    final double pron = _pronunciationRating.toDouble();
+
+    if (wordCount > 0) {
+      fc = (5.5 + (wordCount >= 45 ? 1.5 : wordCount >= 20 ? 1.0 : 0.5)).clamp(4.0, 9.0);
+      lr = (6.0 + matchedCollocs.length * 0.5 + (words.toSet().length >= 25 ? 0.5 : 0.0)).clamp(4.0, 9.0);
+      gra = ((fc + lr) / 2.0).clamp(4.0, 9.0);
+    }
+
+    final strengths = <String>[];
+    final improvements = <String>[];
+    if (matchedCollocs.isNotEmpty) {
+      strengths.add('Vận dụng tốt ${matchedCollocs.length} cụm Collocations mục tiêu (${matchedCollocs.join(", ")}).');
+    } else if (_selectedLesson.part2Collocations.isNotEmpty) {
+      improvements.add('Hãy lồng ghép các Collocations của bài vào câu trả lời để nâng điểm Lexical Resource.');
+    }
+    if (fc >= 7.0) {
+      strengths.add('Độ trôi chảy và liên kết ý mạch lạc đạt chuẩn Band 7.0+.');
+    } else {
+      improvements.add('Mở rộng câu trả lời Part 2 ít nhất 50–80 từ kèm các từ nối tự nhiên.');
+    }
+
+    return {
+      'criteria_scores': {
+        'fluency_coherence': (fc * 2).round() / 2.0,
+        'lexical_resource': (lr * 2).round() / 2.0,
+        'grammatical_range': (gra * 2).round() / 2.0,
+        'pronunciation': (pron * 2).round() / 2.0,
+      },
+      'word_count': wordCount,
+      'matched_collocations': matchedCollocs,
+      'strengths': strengths,
+      'improvements': improvements,
+    };
+  }
+
+  /// Phần đánh giá hoàn thành & Chấm điểm AI Speaking
   Widget _buildEvaluationSection() {
     final avgBand = ((_fluencyRating + _vocabularyRating + _pronunciationRating) / 3.0).toStringAsFixed(1);
 
@@ -1046,7 +1148,7 @@ class _SpeakingPracticeScreenState extends State<SpeakingPracticeScreen> {
             children: [
               const Expanded(
                 child: Text(
-                  'Tự đánh giá & Chấm điểm IELTS',
+                  'Chấm điểm AI & Đánh giá IELTS Speaking',
                   overflow: TextOverflow.ellipsis,
                   style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold, color: AppColors.navy),
                 ),
@@ -1066,6 +1168,96 @@ class _SpeakingPracticeScreenState extends State<SpeakingPracticeScreen> {
             ],
           ),
           const Divider(height: 20),
+
+          // Khung nhập Transcript (Speech-to-Text / Dictation) để AI phân tích
+          Container(
+            padding: const EdgeInsets.all(12),
+            decoration: BoxDecoration(
+              color: const Color(0xFFFAF5FF),
+              borderRadius: BorderRadius.circular(12),
+              border: Border.all(color: _violetColor.withValues(alpha: 0.25)),
+            ),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Row(
+                  children: [
+                    const Icon(Icons.auto_awesome_rounded, color: _violetColor, size: 18),
+                    const SizedBox(width: 6),
+                    const Expanded(
+                      child: Text(
+                        'AI Speech Transcript Analyzer (Tùy chọn)',
+                        style: TextStyle(
+                          fontSize: 13,
+                          fontWeight: FontWeight.bold,
+                          color: _violetDark,
+                        ),
+                      ),
+                    ),
+                    TextButton.icon(
+                      onPressed: () {
+                        setState(() {
+                          _transcriptController.text = _selectedLesson.part2SampleAnswer;
+                        });
+                        _analyzeTranscriptWithAi();
+                      },
+                      style: TextButton.styleFrom(
+                        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
+                        minimumSize: Size.zero,
+                        tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                      ),
+                      icon: const Icon(Icons.bolt_rounded, size: 15, color: _violetColor),
+                      label: const Text(
+                        'Thử bài mẫu',
+                        style: TextStyle(fontSize: 11.5, color: _violetColor, fontWeight: FontWeight.bold),
+                      ),
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 6),
+                TextField(
+                  controller: _transcriptController,
+                  maxLines: 3,
+                  style: const TextStyle(fontSize: 13),
+                  decoration: InputDecoration(
+                    hintText: 'Bấm biểu tượng Micro 🎙️ trên bàn phím để nói hoặc nhập nội dung câu trả lời của bạn để AI tự động chấm Collocations & Fluency...',
+                    hintStyle: TextStyle(fontSize: 12, color: Colors.grey[500]),
+                    filled: true,
+                    fillColor: Colors.white,
+                    contentPadding: const EdgeInsets.all(10),
+                    border: OutlineInputBorder(
+                      borderRadius: BorderRadius.circular(10),
+                      borderSide: BorderSide(color: Colors.grey[300]!),
+                    ),
+                    enabledBorder: OutlineInputBorder(
+                      borderRadius: BorderRadius.circular(10),
+                      borderSide: BorderSide(color: Colors.grey[300]!),
+                    ),
+                  ),
+                ),
+                const SizedBox(height: 8),
+                SizedBox(
+                  width: double.infinity,
+                  child: OutlinedButton.icon(
+                    onPressed: _analyzeTranscriptWithAi,
+                    style: OutlinedButton.styleFrom(
+                      foregroundColor: _violetColor,
+                      side: const BorderSide(color: _violetColor),
+                      padding: const EdgeInsets.symmetric(vertical: 8),
+                      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+                    ),
+                    icon: const Icon(Icons.analytics_outlined, size: 18),
+                    label: const Text(
+                      'PHÂN TÍCH LỜI NÓI BẰNG AI',
+                      style: TextStyle(fontSize: 12, fontWeight: FontWeight.bold),
+                    ),
+                  ),
+                ),
+              ],
+            ),
+          ),
+          const SizedBox(height: 14),
+
           _buildRatingRow('Độ lưu loát & Mạch lạc (Fluency)', _fluencyRating, (v) => setState(() => _fluencyRating = v)),
           _buildRatingRow('Vốn từ vựng (Lexical Resource)', _vocabularyRating, (v) => setState(() => _vocabularyRating = v)),
           _buildRatingRow('Phát âm chuẩn (Pronunciation)', _pronunciationRating, (v) => setState(() => _pronunciationRating = v)),
@@ -1089,6 +1281,110 @@ class _SpeakingPracticeScreenState extends State<SpeakingPracticeScreen> {
                 style: const TextStyle(fontSize: 14, fontWeight: FontWeight.bold, color: Colors.white),
               ),
             ),
+          ),
+          if (_aiEvaluation != null) ...[
+            const SizedBox(height: 16),
+            _buildAiSpeakingEvaluationCard(),
+          ],
+        ],
+      ),
+    );
+  }
+
+  Widget _buildAiSpeakingEvaluationCard() {
+    final eval = _aiEvaluation ?? {};
+    final criteria = eval['criteria_scores'] as Map<String, dynamic>? ?? {};
+    final fc = (criteria['fluency_coherence'] as num?)?.toDouble() ?? _fluencyRating.toDouble();
+    final lr = (criteria['lexical_resource'] as num?)?.toDouble() ?? _vocabularyRating.toDouble();
+    final gra = (criteria['grammatical_range'] as num?)?.toDouble() ?? 7.0;
+    final pron = (criteria['pronunciation'] as num?)?.toDouble() ?? _pronunciationRating.toDouble();
+    final strengths = (eval['strengths'] as List<dynamic>? ?? []).map((e) => e.toString()).toList();
+    final improvements = (eval['improvements'] as List<dynamic>? ?? []).map((e) => e.toString()).toList();
+
+    return Container(
+      padding: const EdgeInsets.all(14),
+      decoration: BoxDecoration(
+        color: const Color(0xFFFAF5FF),
+        borderRadius: BorderRadius.circular(14),
+        border: Border.all(color: _violetColor.withValues(alpha: 0.35)),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              const Icon(Icons.workspace_premium_rounded, color: _violetColor, size: 20),
+              const SizedBox(width: 6),
+              const Expanded(
+                child: Text(
+                  'Báo cáo AI 4 Tiêu chí IELTS Speaking',
+                  style: TextStyle(fontWeight: FontWeight.bold, fontSize: 14, color: _violetDark),
+                ),
+              ),
+              if (_isSubmitted)
+                Text(
+                  'Overall $_submittedBand',
+                  style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 13, color: _violetColor),
+                ),
+            ],
+          ),
+          const SizedBox(height: 10),
+          Row(
+            children: [
+              Expanded(child: _buildSpeakingCriterionChip('Fluency & Coherence', fc)),
+              const SizedBox(width: 8),
+              Expanded(child: _buildSpeakingCriterionChip('Lexical Resource', lr)),
+            ],
+          ),
+          const SizedBox(height: 8),
+          Row(
+            children: [
+              Expanded(child: _buildSpeakingCriterionChip('Grammatical Range', gra)),
+              const SizedBox(width: 8),
+              Expanded(child: _buildSpeakingCriterionChip('Pronunciation', pron)),
+            ],
+          ),
+          if (strengths.isNotEmpty) ...[
+            const SizedBox(height: 10),
+            ...strengths.map((s) => Padding(
+                  padding: const EdgeInsets.only(bottom: 3),
+                  child: Text('✅ $s', style: const TextStyle(fontSize: 12, color: Colors.black87)),
+                )),
+          ],
+          if (improvements.isNotEmpty) ...[
+            const SizedBox(height: 4),
+            ...improvements.map((imp) => Padding(
+                  padding: const EdgeInsets.only(bottom: 3),
+                  child: Text('💡 $imp', style: const TextStyle(fontSize: 12, color: _violetDark)),
+                )),
+          ],
+        ],
+      ),
+    );
+  }
+
+  Widget _buildSpeakingCriterionChip(String label, double score) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(8),
+        border: Border.all(color: _violetColor.withValues(alpha: 0.2)),
+      ),
+      child: Row(
+        mainAxisAlignment: MainAxisAlignment.spaceBetween,
+        children: [
+          Expanded(
+            child: Text(
+              label,
+              style: const TextStyle(fontSize: 11, fontWeight: FontWeight.w600),
+              overflow: TextOverflow.ellipsis,
+            ),
+          ),
+          const SizedBox(width: 4),
+          Text(
+            score.toStringAsFixed(1),
+            style: const TextStyle(fontSize: 13, fontWeight: FontWeight.bold, color: _violetColor),
           ),
         ],
       ),

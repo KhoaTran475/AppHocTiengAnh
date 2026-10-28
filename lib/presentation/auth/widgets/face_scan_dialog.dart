@@ -215,16 +215,13 @@ class _FaceScanDialogState extends State<FaceScanDialog>
 
       if (faces.isEmpty) {
         _consecutiveValidFrames = 0;
-        setState(() {
-          _statusMessage = 'Vui lòng nhìn vào khung tròn';
-          _statusColor = Colors.white70;
-        });
+        _updateStatus('Vui lòng nhìn vào khung tròn', Colors.white70);
       } else if (faces.length > 1) {
         _consecutiveValidFrames = 0;
-        setState(() {
-          _statusMessage = 'Phát hiện nhiều người. Vui lòng quét 1 người';
-          _statusColor = Colors.amberAccent;
-        });
+        _updateStatus(
+          'Phát hiện nhiều người. Vui lòng quét 1 người',
+          Colors.amberAccent,
+        );
       } else {
         final face = faces.first;
         final rotY = face.headEulerAngleY ?? 0.0; // Nghiêng trái/phải
@@ -234,17 +231,14 @@ class _FaceScanDialogState extends State<FaceScanDialog>
         // Kiểm tra góc chụp thẳng tự nhiên (nghiêng dưới 18 độ)
         if (rotY.abs() > 18.0 || rotZ.abs() > 18.0 || rotX.abs() > 18.0) {
           _consecutiveValidFrames = 0;
-          setState(() {
-            _statusMessage = 'Vui lòng nhìn thẳng vào camera';
-            _statusColor = Colors.amberAccent;
-          });
+          _updateStatus('Vui lòng nhìn thẳng vào camera', Colors.amberAccent);
         } else {
           // Khuôn mặt hợp lệ
           _consecutiveValidFrames++;
-          setState(() {
-            _statusMessage = 'Giữ nguyên khuôn mặt... ($_consecutiveValidFrames/$_requiredValidFrames)';
-            _statusColor = Colors.greenAccent;
-          });
+          _updateStatus(
+            'Giữ nguyên khuôn mặt... ($_consecutiveValidFrames/$_requiredValidFrames)',
+            Colors.greenAccent,
+          );
 
           // Khi giữ ổn định đủ 6 frame (~1.5s) -> Mới kích hoạt chụp ảnh
           if (_consecutiveValidFrames >= _requiredValidFrames) {
@@ -257,6 +251,16 @@ class _FaceScanDialogState extends State<FaceScanDialog>
     } finally {
       _isProcessingFrame = false;
     }
+  }
+
+  /// Chỉ gọi setState khi thông điệp hoặc màu sắc thực sự thay đổi (tránh rebuild CameraPreview dư thừa)
+  void _updateStatus(String message, Color color) {
+    if (!mounted || _isDisposed) return;
+    if (_statusMessage == message && _statusColor == color) return;
+    setState(() {
+      _statusMessage = message;
+      _statusColor = color;
+    });
   }
 
   /// QUẢN LÝ RỦI RO 2 & 3:
@@ -343,12 +347,17 @@ class _FaceScanDialogState extends State<FaceScanDialog>
     final format = InputImageFormatValue.fromRawValue(image.format.raw);
     if (format == null) return null;
 
-    // Ghép các planes thành một mảng bytes duy nhất
-    final allBytes = WriteBuffer();
-    for (final plane in image.planes) {
-      allBytes.putUint8List(plane.bytes);
+    // Tối ưu Zero-Copy nếu chỉ có 1 plane (NV21 trên Android / BGRA8888 trên iOS)
+    final Uint8List bytes;
+    if (image.planes.length == 1) {
+      bytes = image.planes.first.bytes;
+    } else {
+      final allBytes = WriteBuffer();
+      for (final plane in image.planes) {
+        allBytes.putUint8List(plane.bytes);
+      }
+      bytes = allBytes.done().buffer.asUint8List();
     }
-    final bytes = allBytes.done().buffer.asUint8List();
 
     return InputImage.fromBytes(
       bytes: bytes,
@@ -399,17 +408,19 @@ class _FaceScanDialogState extends State<FaceScanDialog>
       body: Stack(
         fit: StackFit.expand,
         children: [
-          // 1. Camera Preview tràn màn hình (Không bị cắt ngang hay chừa viền đen trên dưới)
+          // 1. Camera Preview tràn màn hình được bọc trong RepaintBoundary chống giật lag
           if (_isCameraInitialized && _cameraController != null)
-            ClipRect(
-              child: OverflowBox(
-                alignment: Alignment.center,
-                child: FittedBox(
-                  fit: BoxFit.cover,
-                  child: SizedBox(
-                    width: size.width,
-                    height: size.width * _cameraController!.value.aspectRatio,
-                    child: CameraPreview(_cameraController!),
+            RepaintBoundary(
+              child: ClipRect(
+                child: OverflowBox(
+                  alignment: Alignment.center,
+                  child: FittedBox(
+                    fit: BoxFit.cover,
+                    child: SizedBox(
+                      width: size.width,
+                      height: size.width * _cameraController!.value.aspectRatio,
+                      child: CameraPreview(_cameraController!),
+                    ),
                   ),
                 ),
               ),
@@ -420,10 +431,12 @@ class _FaceScanDialogState extends State<FaceScanDialog>
             ),
 
           // 2. Lớp phủ mờ chuyên nghiệp khoét rỗng Oval ở giữa + viền đôi Glow
-          CustomPaint(
-            painter: _OvalOverlayPainter(
-              ovalRect: ovalRect,
-              borderColor: _statusColor,
+          RepaintBoundary(
+            child: CustomPaint(
+              painter: _OvalOverlayPainter(
+                ovalRect: ovalRect,
+                borderColor: _statusColor,
+              ),
             ),
           ),
 

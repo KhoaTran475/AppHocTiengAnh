@@ -36,9 +36,10 @@ class _WritingPracticeScreenState extends State<WritingPracticeScreen> {
   int _secondsLeft = 1200; // Mặc định 20 phút (Task 1)
   bool _isTimerRunning = false;
 
-  // Trạng thái bài nộp
+  // Trạng thái bài nộp & Kết quả chấm AI 4 tiêu chí
   bool _isSubmitted = false;
   String _estimatedBand = '6.5';
+  Map<String, dynamic>? _aiEvaluation;
 
   // Trạng thái Vượt ải Gamification (Theme Cam / Amber)
   int _highestUnlockedStage = 1;
@@ -275,7 +276,8 @@ class _WritingPracticeScreenState extends State<WritingPracticeScreen> {
     final currentUser = context.read<AuthProvider>().currentUser;
     final userId = currentUser?.id ?? 1;
 
-    // 1. Gửi bài tới FastAPI Backend
+    // 1. Khởi tạo phân tích AI cục bộ (fallback khi offline) & gửi tới FastAPI Backend
+    Map<String, dynamic> evalData = _computeLocalWritingAiEvaluation(words, bandFloat);
     bool apiSynced = false;
     try {
       final res = await ApiService.instance.submitTest(
@@ -288,12 +290,16 @@ class _WritingPracticeScreenState extends State<WritingPracticeScreen> {
       if (res['band_score'] != null) band = res['band_score'] as String;
       if (res['passed'] != null) isPassed = res['passed'] as bool;
       if (res['stars'] != null) calculatedStars = res['stars'] as int;
+      if (res['ai_evaluation'] is Map<String, dynamic>) {
+        evalData = res['ai_evaluation'] as Map<String, dynamic>;
+      }
     } catch (_) {}
 
     if (!mounted) return;
 
     setState(() {
       _estimatedBand = band;
+      _aiEvaluation = evalData;
       _isSubmitted = true;
     });
 
@@ -911,6 +917,10 @@ class _WritingPracticeScreenState extends State<WritingPracticeScreen> {
                 ),
               ),
             ),
+            if (_isSubmitted && _aiEvaluation != null) ...[
+              const SizedBox(height: 16),
+              _buildAiWritingEvaluationCard(),
+            ],
             const SizedBox(height: 16),
 
             // Khung Xem Bài mẫu Band 8.0+ Song ngữ
@@ -969,6 +979,220 @@ class _WritingPracticeScreenState extends State<WritingPracticeScreen> {
             ),
           ],
         ),
+      ),
+    );
+  }
+
+  /// Phân tích AI cục bộ 4 tiêu chí IELTS Writing khi không có kết nối mạng
+  Map<String, dynamic> _computeLocalWritingAiEvaluation(int words, double overallBand) {
+    final raw = _essayController.text.trim();
+    final textLower = raw.toLowerCase();
+    final minWords = _selectedLesson.minWordCount;
+
+    final matchedVocab = <String>[];
+    for (final v in _selectedLesson.academicVocabulary) {
+      final clean = v.split('(').first.trim().toLowerCase();
+      if (clean.isNotEmpty && textLower.contains(clean)) {
+        matchedVocab.add(clean);
+      }
+    }
+
+    const linkingCatalog = [
+      'furthermore', 'moreover', 'consequently', 'nevertheless', 'however',
+      'therefore', 'on the other hand', 'in conclusion', 'for instance', 'in addition',
+    ];
+    final linkingUsed = linkingCatalog.where((lw) => textLower.contains(lw)).toList();
+
+    final wordTokens = RegExp(r"[a-zA-Z']+").allMatches(textLower).map((m) => m.group(0)!).toList();
+    final uniqueRatio = wordTokens.isEmpty
+        ? 0.0
+        : ((wordTokens.toSet().length / wordTokens.length) * 100);
+
+    final tr = words >= minWords ? overallBand : (overallBand - 0.5).clamp(5.0, 8.5);
+    final cc = (6.0 + (linkingUsed.length * 0.4) + (_paragraphCount >= 3 ? 0.5 : 0.0)).clamp(5.5, 8.5);
+    final lr = (6.0 + (matchedVocab.length * 0.5)).clamp(5.5, 8.5);
+    final gra = overallBand.clamp(5.5, 8.5);
+
+    final strengths = <String>[];
+    final improvements = <String>[];
+
+    if (words >= minWords) {
+      strengths.add('Đạt yêu cầu độ dài chuẩn học thuật ($words/$minWords từ).');
+    } else {
+      improvements.add('Cần viết thêm ${minWords - words} từ để đạt chuẩn $minWords từ.');
+    }
+    if (matchedVocab.isNotEmpty) {
+      strengths.add('Đã vận dụng từ vựng học thuật: ${matchedVocab.join(", ")}.');
+    } else {
+      improvements.add('Hãy bổ sung các từ vựng học thuật gợi ý của đề bài vào bài luận.');
+    }
+    if (linkingUsed.length >= 2) {
+      strengths.add('Sử dụng tốt các từ nối học thuật (${linkingUsed.join(", ")}).');
+    } else {
+      improvements.add('Tăng cường sử dụng liên từ (Furthermore, Consequently, However) để nâng điểm Coherence & Cohesion.');
+    }
+
+    return {
+      'criteria_scores': {
+        'task_response': (tr * 2).round() / 2.0,
+        'coherence_cohesion': (cc * 2).round() / 2.0,
+        'lexical_resource': (lr * 2).round() / 2.0,
+        'grammatical_range': (gra * 2).round() / 2.0,
+      },
+      'word_count': words,
+      'lexical_diversity': double.parse(uniqueRatio.toStringAsFixed(1)),
+      'matched_academic_vocab': matchedVocab,
+      'linking_words_used': linkingUsed,
+      'strengths': strengths,
+      'improvements': improvements,
+    };
+  }
+
+  /// Thẻ hiển thị kết quả Chấm điểm AI chi tiết 4 tiêu chí IELTS Writing
+  Widget _buildAiWritingEvaluationCard() {
+    final eval = _aiEvaluation ?? {};
+    final criteria = eval['criteria_scores'] as Map<String, dynamic>? ?? {};
+    final tr = (criteria['task_response'] as num?)?.toDouble() ?? 6.5;
+    final cc = (criteria['coherence_cohesion'] as num?)?.toDouble() ?? 6.5;
+    final lr = (criteria['lexical_resource'] as num?)?.toDouble() ?? 6.5;
+    final gra = (criteria['grammatical_range'] as num?)?.toDouble() ?? 6.5;
+    final lexDiv = (eval['lexical_diversity'] as num?)?.toDouble() ?? 0.0;
+    final strengths = (eval['strengths'] as List<dynamic>? ?? []).map((e) => e.toString()).toList();
+    final improvements = (eval['improvements'] as List<dynamic>? ?? []).map((e) => e.toString()).toList();
+
+    return Container(
+      padding: const EdgeInsets.all(16),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(18),
+        border: Border.all(color: const Color(0xFFD97706).withValues(alpha: 0.4), width: 1.5),
+        boxShadow: [
+          BoxShadow(
+            color: const Color(0xFFD97706).withValues(alpha: 0.08),
+            blurRadius: 12,
+            offset: const Offset(0, 4),
+          ),
+        ],
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              Container(
+                padding: const EdgeInsets.all(8),
+                decoration: BoxDecoration(
+                  color: const Color(0xFFD97706).withValues(alpha: 0.12),
+                  borderRadius: BorderRadius.circular(10),
+                ),
+                child: const Icon(Icons.auto_awesome_rounded, color: Color(0xFFD97706), size: 22),
+              ),
+              const SizedBox(width: 10),
+              const Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      'Báo cáo Chấm điểm AI (4 Tiêu chí IELTS)',
+                      style: TextStyle(fontWeight: FontWeight.bold, fontSize: 15, color: AppColors.navy),
+                    ),
+                    Text(
+                      'Phân tích tự động theo chuẩn giám khảo IELTS Academic',
+                      style: TextStyle(fontSize: 11.5, color: Colors.grey),
+                    ),
+                  ],
+                ),
+              ),
+              Container(
+                padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
+                decoration: BoxDecoration(
+                  color: const Color(0xFFD97706),
+                  borderRadius: BorderRadius.circular(10),
+                ),
+                child: Text(
+                  'Band $_estimatedBand',
+                  style: const TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 13),
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 14),
+          Row(
+            children: [
+              Expanded(child: _buildCriteriaBox('Task Response', tr, Colors.blue)),
+              const SizedBox(width: 8),
+              Expanded(child: _buildCriteriaBox('Coherence & Cohesion', cc, Colors.teal)),
+            ],
+          ),
+          const SizedBox(height: 8),
+          Row(
+            children: [
+              Expanded(child: _buildCriteriaBox('Lexical Resource', lr, Colors.purple)),
+              const SizedBox(width: 8),
+              Expanded(child: _buildCriteriaBox('Grammatical Range', gra, Colors.orange[800]!)),
+            ],
+          ),
+          if (lexDiv > 0) ...[
+            const SizedBox(height: 10),
+            Text(
+              '📊 Độ đa dạng từ vựng (Lexical Diversity): $lexDiv% • Số đoạn văn: $_paragraphCount',
+              style: TextStyle(fontSize: 12, fontWeight: FontWeight.w600, color: Colors.grey[700]),
+            ),
+          ],
+          if (strengths.isNotEmpty) ...[
+            const Divider(height: 20),
+            const Text(
+              '✅ Điểm mạnh bài viết:',
+              style: TextStyle(fontWeight: FontWeight.bold, fontSize: 13, color: Colors.green),
+            ),
+            const SizedBox(height: 4),
+            ...strengths.map((s) => Padding(
+                  padding: const EdgeInsets.only(bottom: 4),
+                  child: Text('• $s', style: const TextStyle(fontSize: 12.5, height: 1.35)),
+                )),
+          ],
+          if (improvements.isNotEmpty) ...[
+            const SizedBox(height: 8),
+            const Text(
+              '💡 Gợi ý nâng Band từ AI:',
+              style: TextStyle(fontWeight: FontWeight.bold, fontSize: 13, color: Color(0xFFD97706)),
+            ),
+            const SizedBox(height: 4),
+            ...improvements.map((imp) => Padding(
+                  padding: const EdgeInsets.only(bottom: 4),
+                  child: Text('• $imp', style: const TextStyle(fontSize: 12.5, height: 1.35)),
+                )),
+          ],
+        ],
+      ),
+    );
+  }
+
+  Widget _buildCriteriaBox(String title, double score, Color color) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+      decoration: BoxDecoration(
+        color: color.withValues(alpha: 0.06),
+        borderRadius: BorderRadius.circular(10),
+        border: Border.all(color: color.withValues(alpha: 0.25)),
+      ),
+      child: Row(
+        mainAxisAlignment: MainAxisAlignment.spaceBetween,
+        children: [
+          Expanded(
+            child: Text(
+              title,
+              style: TextStyle(fontSize: 11.5, fontWeight: FontWeight.w600, color: Colors.grey[800]),
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+            ),
+          ),
+          const SizedBox(width: 6),
+          Text(
+            score.toStringAsFixed(1),
+            style: TextStyle(fontSize: 14, fontWeight: FontWeight.bold, color: color),
+          ),
+        ],
       ),
     );
   }

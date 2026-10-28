@@ -60,6 +60,8 @@ class SkillSubmissionRequest(BaseModel):
     answers: Optional[Dict[str, str]] = None  # Key là question_id (dạng chuỗi hoặc số), Value là đáp án người dùng chọn
     essay_text: Optional[str] = None         # Dành cho Writing
     ratings: Optional[Dict[str, int]] = None # Dành cho Speaking (fluency, vocabulary, pronunciation: 1-9)
+    spoken_transcript: Optional[str] = None  # Bản ghi lời nói học viên (AI Speech-to-Text / Transcript)
+    speaking_duration_seconds: Optional[int] = None  # Thời lượng nói (giây)
 
 
 class SkillSubmissionResponse(BaseModel):
@@ -72,6 +74,18 @@ class SkillSubmissionResponse(BaseModel):
     stars: int
     feedback: Optional[str] = None
     question_results: Optional[List[Dict[str, Any]]] = None
+    ai_evaluation: Optional[Dict[str, Any]] = None
+
+
+class LearnerAnalyticsResponse(BaseModel):
+    streak_days: int = 0
+    is_active_today: bool = False
+    total_tests_completed: int = 0
+    total_stars_earned: int = 0
+    overall_band: float = 0.0
+    skill_bands: Dict[str, float] = Field(default_factory=dict)
+    skill_attempts: Dict[str, int] = Field(default_factory=dict)
+    active_weekdays: List[int] = Field(default_factory=list)
 
 
 class PracticeHistoryResponse(BaseModel):

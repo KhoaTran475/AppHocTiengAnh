@@ -8,6 +8,7 @@ from app.schemas.skill import (
     SkillSubmissionResponse,
     PracticeHistoryResponse,
     ListeningProgressResponse,
+    LearnerAnalyticsResponse,
 )
 from app.services.skill_service import (
     get_lessons_by_skill,
@@ -16,6 +17,7 @@ from app.services.skill_service import (
     get_user_practice_history,
     get_user_listening_progress,
     get_user_skill_progress,
+    get_learner_analytics,
 )
 from app.core.deps import get_current_user
 from app.models.user import User
@@ -89,6 +91,19 @@ def submit_skill_test(
         return submit_lesson(db, current_user, submission, sync_supabase=True)
     except ValueError as e:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(e))
+
+
+@router.get(
+    "/analytics",
+    response_model=LearnerAnalyticsResponse,
+    summary="Lấy thống kê Chuỗi ngày học (Daily Streak) & Biểu đồ năng lực 4 Kỹ năng IELTS",
+)
+def get_user_analytics(
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    """Trả về chuỗi ngày học liên tiếp (Streak), điểm trung bình 4 kỹ năng và tổng số sao đạt được."""
+    return get_learner_analytics(db, current_user.id)
 
 
 @router.get(

@@ -1,6 +1,8 @@
+import 'dart:math' as math;
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import '../../../core/database/database_helper.dart';
+import '../../../core/services/skill_progress_service.dart';
 import '../../../core/theme/app_theme.dart';
 import '../../../data/datasources/api_service.dart';
 import '../../../data/models/vocabulary_item_model.dart';
@@ -97,6 +99,19 @@ class _LearnerDashboardTabState extends State<_LearnerDashboardTab> {
   List<VocabularyItemModel> _recentWords = [];
   bool _isLoading = true;
 
+  // Chuỗi ngày học liên tiếp (Daily Streak) & Năng lực 4 Kỹ năng
+  int _streakDays = 0;
+  bool _isActiveToday = false;
+  int _totalStarsEarned = 0;
+  double _overallBand = 0.0;
+  Map<String, double> _skillBands = {
+    'listening': 0.0,
+    'reading': 0.0,
+    'speaking': 0.0,
+    'writing': 0.0,
+  };
+  List<int> _activeWeekdays = [];
+
   @override
   void initState() {
     super.initState();
@@ -106,6 +121,10 @@ class _LearnerDashboardTabState extends State<_LearnerDashboardTab> {
   Future<void> _loadStats() async {
     final user = context.read<AuthProvider>().currentUser;
     if (user != null) {
+      // 1. Tải thống kê Streak & Biểu đồ 4 kỹ năng
+      await _loadAnalytics(user.id ?? 1);
+
+      // 2. Tải Sổ tay từ vựng
       try {
         final words = await ApiService.instance.getNotebookItems();
         if (mounted) {
@@ -131,6 +150,80 @@ class _LearnerDashboardTabState extends State<_LearnerDashboardTab> {
         }
       }
     }
+  }
+
+  Future<void> _loadAnalytics(int userId) async {
+    try {
+      final data = await ApiService.instance.getLearnerAnalytics();
+      if (data.isNotEmpty) {
+        final rawBands = data['skill_bands'] as Map<String, dynamic>? ?? {};
+        final parsedBands = <String, double>{
+          'listening': (rawBands['listening'] as num?)?.toDouble() ?? 0.0,
+          'reading': (rawBands['reading'] as num?)?.toDouble() ?? 0.0,
+          'speaking': (rawBands['speaking'] as num?)?.toDouble() ?? 0.0,
+          'writing': (rawBands['writing'] as num?)?.toDouble() ?? 0.0,
+        };
+        final rawWeekdays = (data['active_weekdays'] as List<dynamic>? ?? [])
+            .map((e) => (e as num).toInt())
+            .toList();
+
+        if (mounted) {
+          setState(() {
+            _streakDays = (data['streak_days'] as num?)?.toInt() ?? 0;
+            _isActiveToday = data['is_active_today'] == true;
+            _totalStarsEarned = (data['total_stars_earned'] as num?)?.toInt() ?? 0;
+            _overallBand = (data['overall_band'] as num?)?.toDouble() ?? 0.0;
+            _skillBands = parsedBands;
+            _activeWeekdays = rawWeekdays;
+          });
+        }
+        return;
+      }
+    } catch (_) {}
+
+    // Fallback cục bộ từ SkillProgressService nếu chưa kết nối Backend
+    try {
+      int totalStars = 0;
+      final Map<String, double> fallbackBands = {};
+      final List<double> nonZero = [];
+
+      for (final sk in ['listening', 'reading', 'speaking', 'writing']) {
+        int skStars = 0;
+        int completedStages = 0;
+        for (int stage = 1; stage <= 5; stage++) {
+          final s = await SkillProgressService.getStageStars(userId, sk, stage);
+          skStars += s;
+          if (s > 0) completedStages++;
+        }
+        totalStars += skStars;
+        if (skStars > 0) {
+          final avgStars = skStars / math.max(1, completedStages);
+          final estBand = (5.5 + (avgStars * 0.5) + (completedStages * 0.2)).clamp(5.5, 8.5);
+          final rounded = (estBand * 2).round() / 2.0;
+          fallbackBands[sk] = rounded;
+          nonZero.add(rounded);
+        } else {
+          fallbackBands[sk] = 0.0;
+        }
+      }
+
+      final overall = nonZero.isEmpty
+          ? 0.0
+          : ((nonZero.reduce((a, b) => a + b) / nonZero.length) * 2).round() / 2.0;
+
+      if (mounted) {
+        setState(() {
+          _totalStarsEarned = totalStars;
+          _skillBands = fallbackBands;
+          _overallBand = overall;
+          if (totalStars > 0 && _streakDays == 0) {
+            _streakDays = 1;
+            _isActiveToday = true;
+            _activeWeekdays = [DateTime.now().weekday];
+          }
+        });
+      }
+    } catch (_) {}
   }
 
   @override
@@ -197,12 +290,20 @@ class _LearnerDashboardTabState extends State<_LearnerDashboardTab> {
               ),
               const SizedBox(height: 18),
 
+              // ── Chuỗi ngày học liên tiếp (Daily Streak) ──
+              _buildDailyStreakCard(),
+              const SizedBox(height: 16),
+
               // ── Banner "Scan to Learn" điểm nhấn AI ──
               _buildAiScanBanner(context),
               const SizedBox(height: 20),
 
               // ── Thống kê tiến độ học tập ──
               _buildStatisticsRow(),
+              const SizedBox(height: 20),
+
+              // ── Biểu đồ Radar Năng lực 4 Kỹ năng IELTS ──
+              _buildFourSkillsRadarCard(),
               const SizedBox(height: 24),
 
               // ── Từ vựng vừa lưu gần đây ──
@@ -215,6 +316,325 @@ class _LearnerDashboardTabState extends State<_LearnerDashboardTab> {
           ),
         ),
       ),
+    );
+  }
+
+  /// Thẻ Chuỗi ngày học liên tiếp (Daily Streak) & Lịch tuần
+  Widget _buildDailyStreakCard() {
+    const weekLabels = ['T2', 'T3', 'T4', 'T5', 'T6', 'T7', 'CN'];
+    final todayWeekday = DateTime.now().weekday; // 1 = Mon .. 7 = Sun
+
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.all(16),
+      decoration: BoxDecoration(
+        gradient: const LinearGradient(
+          colors: [Color(0xFF1E293B), Color(0xFF0F172A)],
+          begin: Alignment.topLeft,
+          end: Alignment.bottomRight,
+        ),
+        borderRadius: BorderRadius.circular(20),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withValues(alpha: 0.12),
+            blurRadius: 12,
+            offset: const Offset(0, 4),
+          ),
+        ],
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              Container(
+                padding: const EdgeInsets.all(10),
+                decoration: BoxDecoration(
+                  gradient: LinearGradient(
+                    colors: _streakDays > 0
+                        ? [const Color(0xFFFF8A00), const Color(0xFFFF3D00)]
+                        : [Colors.blueGrey.shade600, Colors.blueGrey.shade800],
+                  ),
+                  shape: BoxShape.circle,
+                ),
+                child: const Icon(
+                  Icons.local_fire_department_rounded,
+                  color: Colors.white,
+                  size: 26,
+                ),
+              ),
+              const SizedBox(width: 12),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Row(
+                      children: [
+                        Text(
+                          '$_streakDays Ngày Streak',
+                          style: const TextStyle(
+                            color: Colors.white,
+                            fontSize: 18,
+                            fontWeight: FontWeight.bold,
+                          ),
+                        ),
+                        const SizedBox(width: 8),
+                        Container(
+                          padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
+                          decoration: BoxDecoration(
+                            color: _isActiveToday
+                                ? Colors.greenAccent.withValues(alpha: 0.2)
+                                : Colors.amber.withValues(alpha: 0.2),
+                            borderRadius: BorderRadius.circular(10),
+                          ),
+                          child: Text(
+                            _isActiveToday ? 'Đã học hôm nay' : 'Chưa học hôm nay',
+                            style: TextStyle(
+                              color: _isActiveToday ? Colors.greenAccent : Colors.amberAccent,
+                              fontSize: 10.5,
+                              fontWeight: FontWeight.bold,
+                            ),
+                          ),
+                        ),
+                      ],
+                    ),
+                    const SizedBox(height: 2),
+                    Text(
+                      _streakDays > 0
+                          ? 'Duy trì luyện tập mỗi ngày để bứt phá Band điểm IELTS!'
+                          : 'Hoàn thành 1 bài luyện kỹ năng hôm nay để kích hoạt chuỗi Streak!',
+                      style: const TextStyle(color: Colors.white70, fontSize: 12),
+                    ),
+                  ],
+                ),
+              ),
+              Container(
+                padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+                decoration: BoxDecoration(
+                  color: Colors.amber.withValues(alpha: 0.15),
+                  borderRadius: BorderRadius.circular(12),
+                  border: Border.all(color: Colors.amber.withValues(alpha: 0.4)),
+                ),
+                child: Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    const Icon(Icons.star_rounded, color: Colors.amber, size: 18),
+                    const SizedBox(width: 4),
+                    Text(
+                      '$_totalStarsEarned',
+                      style: const TextStyle(
+                        color: Colors.amber,
+                        fontWeight: FontWeight.bold,
+                        fontSize: 14,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 14),
+          // Thanh 7 ngày trong tuần
+          Row(
+            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+            children: List.generate(7, (index) {
+              final dayNum = index + 1;
+              final isDone = _activeWeekdays.contains(dayNum);
+              final isToday = dayNum == todayWeekday;
+
+              return Column(
+                children: [
+                  Text(
+                    weekLabels[index],
+                    style: TextStyle(
+                      color: isToday ? Colors.amberAccent : Colors.white60,
+                      fontSize: 11,
+                      fontWeight: isToday ? FontWeight.bold : FontWeight.w500,
+                    ),
+                  ),
+                  const SizedBox(height: 6),
+                  Container(
+                    width: 32,
+                    height: 32,
+                    decoration: BoxDecoration(
+                      shape: BoxShape.circle,
+                      color: isDone
+                          ? const Color(0xFFFF6D00)
+                          : isToday
+                              ? Colors.white.withValues(alpha: 0.15)
+                              : Colors.white.withValues(alpha: 0.06),
+                      border: isToday
+                          ? Border.all(color: Colors.amberAccent, width: 1.5)
+                          : null,
+                    ),
+                    child: Icon(
+                      isDone ? Icons.check_rounded : Icons.local_fire_department_outlined,
+                      size: 16,
+                      color: isDone
+                          ? Colors.white
+                          : isToday
+                              ? Colors.amberAccent
+                              : Colors.white30,
+                    ),
+                  ),
+                ],
+              );
+            }),
+          ),
+        ],
+      ),
+    );
+  }
+
+  /// Biểu đồ Radar 4 Kỹ năng IELTS & Thống kê Band điểm
+  Widget _buildFourSkillsRadarCard() {
+    final lBand = _skillBands['listening'] ?? 0.0;
+    final rBand = _skillBands['reading'] ?? 0.0;
+    final sBand = _skillBands['speaking'] ?? 0.0;
+    final wBand = _skillBands['writing'] ?? 0.0;
+
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.all(16),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(20),
+        border: Border.all(color: Colors.grey[200]!),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withValues(alpha: 0.03),
+            blurRadius: 10,
+            offset: const Offset(0, 4),
+          ),
+        ],
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              Container(
+                padding: const EdgeInsets.all(8),
+                decoration: BoxDecoration(
+                  color: AppColors.primary.withValues(alpha: 0.1),
+                  borderRadius: BorderRadius.circular(10),
+                ),
+                child: const Icon(Icons.radar_rounded, color: AppColors.primary, size: 20),
+              ),
+              const SizedBox(width: 10),
+              const Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      'Biểu đồ Năng lực 4 Kỹ năng IELTS',
+                      style: TextStyle(
+                        fontSize: 15.5,
+                        fontWeight: FontWeight.bold,
+                        color: AppColors.navy,
+                      ),
+                    ),
+                    Text(
+                      'Tổng hợp từ lịch sử vượt ải & chấm điểm AI',
+                      style: TextStyle(fontSize: 11.5, color: Colors.grey),
+                    ),
+                  ],
+                ),
+              ),
+              Container(
+                padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
+                decoration: BoxDecoration(
+                  gradient: AppColors.primaryGradient,
+                  borderRadius: BorderRadius.circular(12),
+                ),
+                child: Text(
+                  _overallBand > 0 ? 'Overall ${_overallBand.toStringAsFixed(1)}' : 'Overall --',
+                  style: const TextStyle(
+                    color: Colors.white,
+                    fontWeight: FontWeight.bold,
+                    fontSize: 12,
+                  ),
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 16),
+          Row(
+            children: [
+              // Biểu đồ Radar 4 trục
+              SizedBox(
+                width: 155,
+                height: 155,
+                child: CustomPaint(
+                  painter: _SkillsRadarChartPainter(
+                    listening: lBand,
+                    reading: rBand,
+                    speaking: sBand,
+                    writing: wBand,
+                  ),
+                ),
+              ),
+              const SizedBox(width: 14),
+              // Chi tiết từng kỹ năng
+              Expanded(
+                child: Column(
+                  children: [
+                    _buildSkillBandRow('Listening', lBand, Colors.blue),
+                    const SizedBox(height: 10),
+                    _buildSkillBandRow('Reading', rBand, Colors.green),
+                    const SizedBox(height: 10),
+                    _buildSkillBandRow('Speaking', sBand, Colors.orange),
+                    const SizedBox(height: 10),
+                    _buildSkillBandRow('Writing', wBand, Colors.teal),
+                  ],
+                ),
+              ),
+            ],
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildSkillBandRow(String label, double band, Color color) {
+    final progress = (band / 9.0).clamp(0.0, 1.0);
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Row(
+          mainAxisAlignment: MainAxisAlignment.spaceBetween,
+          children: [
+            Text(
+              label,
+              style: const TextStyle(
+                fontSize: 12.5,
+                fontWeight: FontWeight.w600,
+                color: AppColors.navy,
+              ),
+            ),
+            Text(
+              band > 0 ? 'Band ${band.toStringAsFixed(1)}' : 'Chưa thi',
+              style: TextStyle(
+                fontSize: 12,
+                fontWeight: FontWeight.bold,
+                color: band > 0 ? color : Colors.grey[400],
+              ),
+            ),
+          ],
+        ),
+        const SizedBox(height: 4),
+        ClipRRect(
+          borderRadius: BorderRadius.circular(6),
+          child: LinearProgressIndicator(
+            value: progress > 0 ? progress : 0.06,
+            minHeight: 7,
+            backgroundColor: Colors.grey[100],
+            valueColor: AlwaysStoppedAnimation<Color>(
+              band > 0 ? color : Colors.grey[300]!,
+            ),
+          ),
+        ),
+      ],
     );
   }
 
@@ -522,7 +942,7 @@ class _LearnerDashboardTabState extends State<_LearnerDashboardTab> {
                   context,
                   MaterialPageRoute(
                       builder: (_) => const ListeningPracticeScreen()),
-                );
+                ).then((_) => _loadStats());
               },
             ),
             _buildSkillTile(
@@ -535,7 +955,7 @@ class _LearnerDashboardTabState extends State<_LearnerDashboardTab> {
                   context,
                   MaterialPageRoute(
                       builder: (_) => const ReadingPracticeScreen()),
-                );
+                ).then((_) => _loadStats());
               },
             ),
             _buildSkillTile(
@@ -548,20 +968,20 @@ class _LearnerDashboardTabState extends State<_LearnerDashboardTab> {
                   context,
                   MaterialPageRoute(
                       builder: (_) => const SpeakingPracticeScreen()),
-                );
+                ).then((_) => _loadStats());
               },
             ),
             _buildSkillTile(
               Icons.edit_note_rounded,
               'Writing',
-              'Soạn thảo & Đếm từ',
+              'Chấm AI 4 tiêu chí',
               Colors.teal,
               onTap: () {
                 Navigator.push(
                   context,
                   MaterialPageRoute(
                       builder: (_) => const WritingPracticeScreen()),
-                );
+                ).then((_) => _loadStats());
               },
             ),
           ],
@@ -1075,5 +1495,141 @@ class _LearnerProfileTabState extends State<_LearnerProfileTab> {
         ],
       ),
     );
+  }
+}
+
+/// CustomPainter vẽ Biểu đồ Radar 4 Kỹ năng IELTS (Listening - Reading - Speaking - Writing)
+class _SkillsRadarChartPainter extends CustomPainter {
+  final double listening;
+  final double reading;
+  final double speaking;
+  final double writing;
+
+  _SkillsRadarChartPainter({
+    required this.listening,
+    required this.reading,
+    required this.speaking,
+    required this.writing,
+  });
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    final center = Offset(size.width / 2, size.height / 2);
+    final maxRadius = math.min(size.width, size.height) * 0.36;
+
+    final gridPaint = Paint()
+      ..color = Colors.grey.withValues(alpha: 0.25)
+      ..style = PaintingStyle.stroke
+      ..strokeWidth = 1.0;
+
+    final axisPaint = Paint()
+      ..color = Colors.grey.withValues(alpha: 0.3)
+      ..strokeWidth = 1.0;
+
+    // 4 góc tương ứng: Top (Listening), Right (Reading), Bottom (Speaking), Left (Writing)
+    const angles = [
+      -math.pi / 2, // Top: Listening
+      0.0, // Right: Reading
+      math.pi / 2, // Bottom: Speaking
+      math.pi, // Left: Writing
+    ];
+
+    // Vẽ 3 vòng lưới đa giác (33%, 66%, 100% của Band 9.0)
+    for (final ratio in [0.33, 0.66, 1.0]) {
+      final path = Path();
+      for (int i = 0; i < 4; i++) {
+        final r = maxRadius * ratio;
+        final pt = Offset(
+          center.dx + r * math.cos(angles[i]),
+          center.dy + r * math.sin(angles[i]),
+        );
+        if (i == 0) {
+          path.moveTo(pt.dx, pt.dy);
+        } else {
+          path.lineTo(pt.dx, pt.dy);
+        }
+      }
+      path.close();
+      canvas.drawPath(path, gridPaint);
+    }
+
+    // Vẽ 4 trục tọa độ & nhãn 4 đỉnh
+    const labels = ['L', 'R', 'S', 'W'];
+    final labelColors = [Colors.blue, Colors.green, Colors.orange, Colors.teal];
+
+    for (int i = 0; i < 4; i++) {
+      final endPt = Offset(
+        center.dx + maxRadius * math.cos(angles[i]),
+        center.dy + maxRadius * math.sin(angles[i]),
+      );
+      canvas.drawLine(center, endPt, axisPaint);
+
+      final labelOffset = Offset(
+        center.dx + (maxRadius + 15) * math.cos(angles[i]),
+        center.dy + (maxRadius + 15) * math.sin(angles[i]),
+      );
+      final tp = TextPainter(
+        text: TextSpan(
+          text: labels[i],
+          style: TextStyle(
+            fontSize: 11,
+            fontWeight: FontWeight.bold,
+            color: labelColors[i],
+          ),
+        ),
+        textDirection: TextDirection.ltr,
+      )..layout();
+      tp.paint(
+        canvas,
+        Offset(labelOffset.dx - tp.width / 2, labelOffset.dy - tp.height / 2),
+      );
+    }
+
+    // Vẽ miền năng lực thực tế của học viên
+    final values = [listening, reading, speaking, writing];
+    final dataPath = Path();
+    final points = <Offset>[];
+
+    for (int i = 0; i < 4; i++) {
+      // Nếu chưa có điểm (0.0), hiển thị mức nền tối thiểu 0.18 để thấy khung đa giác
+      final norm = values[i] > 0 ? (values[i] / 9.0).clamp(0.18, 1.0) : 0.18;
+      final r = maxRadius * norm;
+      final pt = Offset(
+        center.dx + r * math.cos(angles[i]),
+        center.dy + r * math.sin(angles[i]),
+      );
+      points.add(pt);
+      if (i == 0) {
+        dataPath.moveTo(pt.dx, pt.dy);
+      } else {
+        dataPath.lineTo(pt.dx, pt.dy);
+      }
+    }
+    dataPath.close();
+
+    final fillPaint = Paint()
+      ..color = AppColors.primary.withValues(alpha: 0.22)
+      ..style = PaintingStyle.fill;
+    final strokePaint = Paint()
+      ..color = AppColors.primary
+      ..style = PaintingStyle.stroke
+      ..strokeWidth = 2.0;
+
+    canvas.drawPath(dataPath, fillPaint);
+    canvas.drawPath(dataPath, strokePaint);
+
+    // Vẽ các điểm nút
+    final dotPaint = Paint()..color = AppColors.primary;
+    for (final pt in points) {
+      canvas.drawCircle(pt, 3.5, dotPaint);
+    }
+  }
+
+  @override
+  bool shouldRepaint(covariant _SkillsRadarChartPainter oldDelegate) {
+    return oldDelegate.listening != listening ||
+        oldDelegate.reading != reading ||
+        oldDelegate.speaking != speaking ||
+        oldDelegate.writing != writing;
   }
 }
