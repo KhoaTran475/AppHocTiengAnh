@@ -196,12 +196,14 @@ class _ListeningPracticeScreenState extends State<ListeningPracticeScreen> {
 
     // Nộp bài và chấm điểm qua FastAPI Backend
     final Map<String, String> stringAnswers = _userAnswers.map((k, v) => MapEntry(k.toString(), v));
+    bool apiSynced = false;
     try {
       final res = await ApiService.instance.submitTest(
         lessonId: _selectedLesson.id,
         skillType: 'listening',
         answers: stringAnswers,
       );
+      apiSynced = true;
       if (res['score'] != null) score = res['score'] as int;
       if (res['band_score'] != null) estimatedBand = res['band_score'] as String;
       if (res['passed'] != null) isPassed = res['passed'] as bool;
@@ -229,7 +231,7 @@ class _ListeningPracticeScreenState extends State<ListeningPracticeScreen> {
 
     await _loadStageProgress(autoSelectNextStage: false);
 
-    // 2. Lưu kết quả bài nghe lên Supabase
+    // 2. Lưu kết quả bài nghe lên Supabase (nếu FastAPI chưa đồng bộ)
     try {
       await PracticeService.savePracticeResult(
         skillType: 'listening',
@@ -239,6 +241,7 @@ class _ListeningPracticeScreenState extends State<ListeningPracticeScreen> {
         totalQuestions: total,
         bandScore: estimatedBand,
         username: currentUser?.username,
+        alreadySyncedByBackend: apiSynced,
       );
     } catch (_) {}
 

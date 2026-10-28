@@ -1,4 +1,5 @@
 from datetime import datetime
+import json
 from sqlalchemy import Column, Integer, String, Text, DateTime
 from sqlalchemy.dialects.postgresql import UUID, JSONB
 from sqlalchemy.types import TypeDecorator
@@ -25,6 +26,23 @@ class UniversalJSON(TypeDecorator):
         if dialect.name == "postgresql":
             return dialect.type_descriptor(JSONB)
         return dialect.type_descriptor(Text)
+
+    def process_bind_param(self, value, dialect):
+        if value is None or dialect.name == "postgresql":
+            return value
+        if isinstance(value, str):
+            return value
+        return json.dumps(value, ensure_ascii=False)
+
+    def process_result_value(self, value, dialect):
+        if value is None or dialect.name == "postgresql":
+            return value
+        if isinstance(value, str):
+            try:
+                return json.loads(value)
+            except Exception:
+                return value
+        return value
 
 
 class VocabularyNotebook(Base):

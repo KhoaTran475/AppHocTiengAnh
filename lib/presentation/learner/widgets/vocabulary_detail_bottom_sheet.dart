@@ -113,6 +113,11 @@ class _VocabularyDetailBottomSheetState
 
     try {
       await ApiService.instance.saveToNotebook(item);
+      await DatabaseHelper.instance.insertNotebookItem(
+        item,
+        username: currentUser.username,
+        skipCloudSync: true,
+      );
     } catch (_) {
       await DatabaseHelper.instance.insertNotebookItem(item, username: currentUser.username);
     }

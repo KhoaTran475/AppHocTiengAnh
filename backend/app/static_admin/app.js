@@ -370,10 +370,10 @@ function renderSkillLessons() {
             <span class="badge-band"><i class="fa-solid fa-star"></i> Target Band ${targetBand}</span>
           </div>
           <div class="lesson-actions">
-            <button class="btn-icon edit" onclick="openLessonModal(${l.id})" title="Chỉnh sửa đề thi">
+            <button class="btn-icon edit" onclick="openLessonModal('${escapeHtml(String(l.id))}')" title="Chỉnh sửa đề thi">
               <i class="fa-solid fa-pen-to-square"></i>
             </button>
-            <button class="btn-icon delete" onclick="handleDeleteLesson(${l.id}, '${escapeHtml(l.title || '')}')" title="Xóa đề thi">
+            <button class="btn-icon delete" onclick="handleDeleteLesson('${escapeHtml(String(l.id))}', '${escapeHtml(l.title || '')}')" title="Xóa đề thi">
               <i class="fa-solid fa-trash-can"></i>
             </button>
           </div>
@@ -403,7 +403,7 @@ function openLessonModal(lessonId = null) {
   const form = document.getElementById('lesson-form');
 
   if (lessonId) {
-    const lesson = state.lessons.find(l => l.id === lessonId);
+    const lesson = state.lessons.find(l => String(l.id) === String(lessonId));
     if (!lesson) return;
     titleElem.innerHTML = `<i class="fa-solid fa-file-pen"></i> Chỉnh sửa Đề thi & Ải (#${lesson.id})`;
     document.getElementById('lesson-edit-id').value = lesson.id;

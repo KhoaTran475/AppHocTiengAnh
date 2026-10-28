@@ -164,6 +164,7 @@ class _ReadingPracticeScreenState extends State<ReadingPracticeScreen> {
     bool isPassed = score >= _selectedPassage.passScoreRequired;
 
     // Nộp bài và chấm điểm qua FastAPI Backend
+    bool apiSynced = false;
     try {
       final Map<String, String> stringAnswers =
           _userAnswers.map((k, v) => MapEntry(k.toString(), v));
@@ -172,6 +173,7 @@ class _ReadingPracticeScreenState extends State<ReadingPracticeScreen> {
         skillType: 'reading',
         answers: stringAnswers,
       );
+      apiSynced = true;
       if (res['score'] != null) score = res['score'] as int;
       if (res['band_score'] != null) estimatedBand = res['band_score'] as String;
       if (res['passed'] != null) isPassed = res['passed'] as bool;
@@ -200,7 +202,7 @@ class _ReadingPracticeScreenState extends State<ReadingPracticeScreen> {
 
     await _loadStageProgress(autoSelectNextStage: false);
 
-    // 2. Đồng bộ kết quả bài đọc lên Supabase
+    // 2. Đồng bộ kết quả bài đọc lên Supabase (nếu FastAPI chưa đồng bộ)
     try {
       await PracticeService.savePracticeResult(
         skillType: 'reading',
@@ -210,6 +212,7 @@ class _ReadingPracticeScreenState extends State<ReadingPracticeScreen> {
         totalQuestions: total,
         bandScore: estimatedBand,
         username: currentUser?.username,
+        alreadySyncedByBackend: apiSynced,
       );
     } catch (_) {}
 

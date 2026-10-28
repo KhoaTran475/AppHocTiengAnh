@@ -6,6 +6,8 @@ from app.schemas.user import AdminKPISummary
 from app.core.deps import get_current_admin
 from app.core.supabase import get_supabase_admin
 from app.models.user import User
+from app.models.mapping import ObjectMapping
+from app.models.notebook import VocabularyNotebook
 
 router = APIRouter()
 
@@ -21,7 +23,7 @@ def get_admin_kpis(
     total_learners = db.query(func.count(User.id)).filter(User.role == "learner").scalar() or 0
     total_admins = db.query(func.count(User.id)).filter(User.role == "admin").scalar() or 0
 
-    # 2. Thống kê từ vựng và Sổ tay từ Supabase
+    # 2. Thống kê từ vựng và Sổ tay (ưu tiên Supabase, fallback SQLAlchemy local DB)
     total_mappings = 0
     total_notebook_items = 0
     band_distribution = {
@@ -33,7 +35,7 @@ def get_admin_kpis(
 
     try:
         supabase = get_supabase_admin()
-        
+
         # Đếm tổng object_mappings
         mappings_res = supabase.table("object_mappings").select("band_score").execute()
         if mappings_res.data:
@@ -52,9 +54,19 @@ def get_admin_kpis(
             total_notebook_items = len(notebook_res.data)
 
     except Exception:
-        # Nếu có lỗi khi query Supabase, fallback số liệu mặc định 82 nhãn
-        if total_mappings == 0:
-            total_mappings = 82
+        pass
+
+    # Fallback sang Database cục bộ nếu chưa có dữ liệu từ Supabase
+    if total_mappings == 0:
+        local_mappings = db.query(ObjectMapping.band_score).all()
+        total_mappings = len(local_mappings) or 82
+        for (band,) in local_mappings:
+            if band:
+                formatted_band = f"Band {band}" if not str(band).startswith("Band") else str(band)
+                band_distribution[formatted_band] = band_distribution.get(formatted_band, 0) + 1
+
+    if total_notebook_items == 0:
+        total_notebook_items = db.query(func.count(VocabularyNotebook.id)).scalar() or 0
 
     return AdminKPISummary(
         total_users=total_users,
@@ -175,6 +187,7 @@ def admin_delete_lesson(
 )
 async def admin_import_skill_lessons(
     file: UploadFile = File(...),
+    skill_type: Optional[str] = Query(None, description="Kỹ năng mặc định nếu file không khai báo cột skill_type"),
     current_admin: User = Depends(get_current_admin),
     db: Session = Depends(get_db),
 ):
@@ -253,7 +266,7 @@ async def admin_import_skill_lessons(
             detail="File tải lên không có dữ liệu bài học nào.",
         )
 
-    result = import_skill_lessons_from_data(db, items)
+    result = import_skill_lessons_from_data(db, items, default_skill_type=skill_type)
     return SkillLessonImportResponse(**result)
 
 

@@ -53,7 +53,7 @@ class PracticeService {
     }
   }
 
-  /// Lưu kết quả bài làm (Reading / Listening / Speaking / Writing) qua FastAPI Backend hoặc Supabase
+  /// Lưu kết quả bài làm (Reading / Listening / Speaking / Writing) lên Supabase Cloud (dùng làm fallback khi FastAPI không khả dụng)
   static Future<bool> savePracticeResult({
     required String skillType, // 'reading', 'listening', 'speaking', 'writing'
     required String lessonId,
@@ -62,24 +62,13 @@ class PracticeService {
     required int totalQuestions,
     required String bandScore,
     String? username,
+    bool alreadySyncedByBackend = false,
   }) async {
-    // Ưu tiên gửi qua FastAPI backend
-    try {
-      await ApiService.instance.submitTest(
-        skillType: skillType,
-        lessonId: lessonId,
-        lessonTitle: lessonTitle,
-        score: score,
-        totalQuestions: totalQuestions,
-        bandScore: bandScore,
-      );
-      log('✅ [FastAPI] Đã lưu thành công kết quả ($skillType - $lessonTitle - Band $bandScore)!');
+    if (alreadySyncedByBackend) {
       return true;
-    } catch (e) {
-      log('⚠️ [FastAPI] Lỗi submit test, fallback sang Supabase: $e');
     }
 
-    // Fallback sang Supabase Cloud
+    // Fallback sang Supabase Cloud khi FastAPI không khả dụng
     try {
       final userId = await _resolveUserId(username);
       if (userId == null) {

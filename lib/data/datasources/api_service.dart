@@ -112,7 +112,7 @@ class ApiService {
       return {
         'token': data['access_token'] as String,
         'user': user,
-        'similarity': (data['similarity'] as num?)?.toDouble() ?? 0.0,
+        'similarity': ((data['similarity_score'] ?? data['similarity']) as num?)?.toDouble() ?? 0.0,
       };
     } on DioException catch (e) {
       final statusCode = e.response?.statusCode;
@@ -628,11 +628,20 @@ class ApiService {
 
   Future<List<Map<String, dynamic>>> getAdminSkillLessons(String skillType) async {
     try {
-      final res = await _dio.get(ApiEndpoints.skillLessons(skillType.toLowerCase()));
+      final res = await _dio.get(
+        ApiEndpoints.adminSkillLessons,
+        queryParameters: {'skill_type': skillType.toLowerCase()},
+      );
       final list = res.data as List<dynamic>;
       return list.map((e) => e as Map<String, dynamic>).toList();
-    } on DioException catch (e) {
-      throw Exception(e.response?.data?['detail'] ?? 'Lỗi tải danh sách bài học');
+    } on DioException catch (_) {
+      try {
+        final res = await _dio.get(ApiEndpoints.skillLessons(skillType.toLowerCase()));
+        final list = res.data as List<dynamic>;
+        return list.map((e) => e as Map<String, dynamic>).toList();
+      } on DioException catch (e) {
+        throw Exception(e.response?.data?['detail'] ?? 'Lỗi tải danh sách bài học');
+      }
     }
   }
 
@@ -672,6 +681,7 @@ class ApiService {
   Future<Map<String, dynamic>> importSkillLessonsFile({
     required List<int> fileBytes,
     required String fileName,
+    String? skillType,
   }) async {
     try {
       final formData = FormData.fromMap({
@@ -679,6 +689,7 @@ class ApiService {
       });
       final res = await _dio.post(
         ApiEndpoints.adminSkillImport,
+        queryParameters: skillType != null ? {'skill_type': skillType} : null,
         data: formData,
       );
       return res.data as Map<String, dynamic>;

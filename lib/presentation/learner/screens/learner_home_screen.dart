@@ -679,7 +679,7 @@ class _LearnerProfileTabState extends State<_LearnerProfileTab> {
       // Cập nhật State trong AuthProvider
       context.read<AuthProvider>().updateFaceAuthStatus(
         isEnabled: true,
-        registeredAt: res['registered_at']?.toString(),
+        registeredAt: (res['face_registered_at'] ?? res['registered_at'])?.toString(),
       );
 
       ScaffoldMessenger.of(context).showSnackBar(

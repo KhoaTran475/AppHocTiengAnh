@@ -63,6 +63,8 @@ def detect_objects_in_image(
     if boxes is None or len(boxes) == 0:
         return detections
 
+    mapping_cache: dict[str, Optional[ObjectMappingResponse]] = {}
+
     for box in boxes:
         cls_id = int(box.cls[0].item())
         conf = float(box.conf[0].item())
@@ -77,11 +79,15 @@ def detect_objects_in_image(
             ymax=max(0.0, min(1.0, xyxy[3] / height)),
         )
 
-        # Ánh xạ từ vựng IELTS từ Database
-        vocab_mapping = get_mapping_by_label(db, label_name)
-        vocab_resp = None
-        if vocab_mapping:
-            vocab_resp = ObjectMappingResponse.model_validate(vocab_mapping)
+        # Ánh xạ từ vựng IELTS từ Database (có cache theo nhãn tránh N+1 queries)
+        if label_name not in mapping_cache:
+            vocab_mapping = get_mapping_by_label(db, label_name)
+            mapping_cache[label_name] = (
+                ObjectMappingResponse.model_validate(vocab_mapping)
+                if vocab_mapping
+                else None
+            )
+        vocab_resp = mapping_cache[label_name]
 
         detections.append(
             DetectedObject(

@@ -513,25 +513,42 @@ class _VocabularyNotebookScreenState extends State<VocabularyNotebookScreen> {
                   ),
 
                   // Nút mở rộng/thu gọn chi tiết học thuật
-                  Row(
-                    mainAxisAlignment: MainAxisAlignment.end,
-                    children: [
-                      Text(
-                        isExpanded ? 'Thu gọn' : 'Xem chi tiết (Collocations, Speaking)',
-                        style: TextStyle(
-                          fontSize: 12,
-                          color: Colors.grey[600],
-                          fontWeight: FontWeight.w500,
-                        ),
+                  InkWell(
+                    onTap: item.id == null
+                        ? null
+                        : () {
+                            setState(() {
+                              if (_expandedCardIds.contains(item.id)) {
+                                _expandedCardIds.remove(item.id);
+                              } else {
+                                _expandedCardIds.add(item.id!);
+                              }
+                            });
+                          },
+                    borderRadius: BorderRadius.circular(8),
+                    child: Padding(
+                      padding: const EdgeInsets.symmetric(vertical: 4, horizontal: 2),
+                      child: Row(
+                        mainAxisAlignment: MainAxisAlignment.end,
+                        children: [
+                          Text(
+                            isExpanded ? 'Thu gọn' : 'Xem chi tiết (Collocations, Speaking)',
+                            style: TextStyle(
+                              fontSize: 12,
+                              color: Colors.grey[600],
+                              fontWeight: FontWeight.w500,
+                            ),
+                          ),
+                          Icon(
+                            isExpanded
+                                ? Icons.keyboard_arrow_up_rounded
+                                : Icons.keyboard_arrow_down_rounded,
+                            color: Colors.grey[600],
+                            size: 18,
+                          ),
+                        ],
                       ),
-                      Icon(
-                        isExpanded
-                            ? Icons.keyboard_arrow_up_rounded
-                            : Icons.keyboard_arrow_down_rounded,
-                        color: Colors.grey[600],
-                        size: 18,
-                      ),
-                    ],
+                    ),
                   ),
 
                   // Nội dung mở rộng chi tiết

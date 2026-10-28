@@ -39,7 +39,7 @@ class _SpeakingPracticeScreenState extends State<SpeakingPracticeScreen> {
 
   // Trạng thái phát âm
   bool _isPlayingAudio = false;
-  final double _speechRate = 0.9; // Tốc độ đọc tự nhiên
+  final double _speechRate = 0.45; // Tốc độ đọc tự nhiên chuẩn IELTS
 
   // Bộ đánh giá hoàn thành bài nói
   bool _isSubmitted = false;
@@ -226,7 +226,7 @@ class _SpeakingPracticeScreenState extends State<SpeakingPracticeScreen> {
 
   Future<void> _submitSpeakingResult() async {
     final avgScore = ((_fluencyRating + _vocabularyRating + _pronunciationRating) / 3.0);
-    final bandScore = avgScore.toStringAsFixed(1);
+    String bandScore = avgScore.toStringAsFixed(1);
     final targetBand = _selectedLesson.bandScoreTarget;
     final targetFloat = double.tryParse(targetBand.replaceAll('+', '')) ?? 6.0;
 
@@ -246,6 +246,7 @@ class _SpeakingPracticeScreenState extends State<SpeakingPracticeScreen> {
     final userId = currentUser?.id ?? 1;
 
     // 1. Gửi kết quả tới FastAPI Backend
+    bool apiSynced = false;
     try {
       final res = await ApiService.instance.submitTest(
         lessonId: _selectedLesson.id,
@@ -256,12 +257,15 @@ class _SpeakingPracticeScreenState extends State<SpeakingPracticeScreen> {
           'pronunciation': _pronunciationRating,
         },
       );
+      apiSynced = true;
       if (res['band_score'] != null) {
-        // bandScore
+        bandScore = res['band_score'].toString();
       }
       if (res['passed'] != null) isPassed = res['passed'] as bool;
       if (res['stars'] != null) calculatedStars = res['stars'] as int;
     } catch (_) {}
+
+    if (!mounted) return;
 
     setState(() {
       _isSubmitted = true;
@@ -282,16 +286,17 @@ class _SpeakingPracticeScreenState extends State<SpeakingPracticeScreen> {
 
     await _loadStageProgress(autoSelectNextStage: false);
 
-    // 3. Đồng bộ Supabase
+    // 3. Đồng bộ Supabase (nếu FastAPI chưa đồng bộ)
     try {
       await PracticeService.savePracticeResult(
         skillType: 'speaking',
         lessonId: _selectedLesson.id,
         lessonTitle: 'Ải ${_selectedLesson.stageNumber}: ${_selectedLesson.title}',
         score: (_fluencyRating + _vocabularyRating + _pronunciationRating),
-        totalQuestions: 30, // Thang điểm tổng 10 x 3 tiêu chí
+        totalQuestions: 27, // Thang điểm tổng 9 x 3 tiêu chí
         bandScore: bandScore,
         username: currentUser?.username,
+        alreadySyncedByBackend: apiSynced,
       );
     } catch (_) {}
 
@@ -1091,6 +1096,7 @@ class _SpeakingPracticeScreenState extends State<SpeakingPracticeScreen> {
   }
 
   Widget _buildRatingRow(String title, int value, ValueChanged<int> onChanged) {
+    final clampedVal = value.clamp(4, 9);
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
@@ -1098,14 +1104,14 @@ class _SpeakingPracticeScreenState extends State<SpeakingPracticeScreen> {
           mainAxisAlignment: MainAxisAlignment.spaceBetween,
           children: [
             Text(title, style: const TextStyle(fontSize: 13, color: Colors.black87)),
-            Text('$value/10', style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 13, color: _violetColor)),
+            Text('Band $clampedVal.0 / 9.0', style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 13, color: _violetColor)),
           ],
         ),
         Slider(
-          value: value.toDouble(),
+          value: clampedVal.toDouble(),
           min: 4,
-          max: 10,
-          divisions: 6,
+          max: 9,
+          divisions: 5,
           activeColor: _violetColor,
           onChanged: (val) => onChanged(val.round()),
         ),

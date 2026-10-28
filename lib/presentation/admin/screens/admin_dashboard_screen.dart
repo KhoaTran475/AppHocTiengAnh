@@ -94,7 +94,10 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
         if (mappings.isNotEmpty) {
           final bandDistRaw = kpis['band_distribution'] as Map<String, dynamic>? ?? {};
           final Map<String, int> bandDist = {};
-          bandDistRaw.forEach((k, v) => bandDist[k] = (v as num).toInt());
+          bandDistRaw.forEach((k, v) {
+            final cleanKey = k.replaceAll('Band ', '').trim();
+            bandDist[cleanKey] = (v as num).toInt();
+          });
 
           setState(() {
             _allMappings = mappings;
@@ -102,7 +105,7 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
             _totalMappings = (kpis['total_mappings'] as num?)?.toInt() ?? mappings.length;
             _totalUsers = (kpis['total_users'] as num?)?.toInt() ?? users.length;
             _totalLearners = (kpis['total_learners'] as num?)?.toInt() ?? 0;
-            _totalSavedNotebook = (kpis['total_saved_notebook'] as num?)?.toInt() ?? 0;
+            _totalSavedNotebook = ((kpis['total_notebook_items'] ?? kpis['total_saved_notebook']) as num?)?.toInt() ?? 0;
             _bandDistribution = bandDist;
             _isLoading = false;
           });

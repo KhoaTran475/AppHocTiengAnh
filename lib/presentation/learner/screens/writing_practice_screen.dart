@@ -276,6 +276,7 @@ class _WritingPracticeScreenState extends State<WritingPracticeScreen> {
     final userId = currentUser?.id ?? 1;
 
     // 1. Gửi bài tới FastAPI Backend
+    bool apiSynced = false;
     try {
       final res = await ApiService.instance.submitTest(
         lessonId: _selectedLesson.id,
@@ -283,10 +284,13 @@ class _WritingPracticeScreenState extends State<WritingPracticeScreen> {
         essayText: _essayController.text,
         taskType: _selectedLesson.taskType == 'Task 1' ? 1 : 2,
       );
+      apiSynced = true;
       if (res['band_score'] != null) band = res['band_score'] as String;
       if (res['passed'] != null) isPassed = res['passed'] as bool;
       if (res['stars'] != null) calculatedStars = res['stars'] as int;
     } catch (_) {}
+
+    if (!mounted) return;
 
     setState(() {
       _estimatedBand = band;
@@ -307,7 +311,7 @@ class _WritingPracticeScreenState extends State<WritingPracticeScreen> {
 
     await _loadStageProgress(autoSelectNextStage: false);
 
-    // 3. Đồng bộ lên Supabase
+    // 3. Đồng bộ lên Supabase (nếu FastAPI chưa đồng bộ)
     try {
       await PracticeService.savePracticeResult(
         skillType: 'writing',
@@ -317,6 +321,7 @@ class _WritingPracticeScreenState extends State<WritingPracticeScreen> {
         totalQuestions: _selectedLesson.minWordCount,
         bandScore: band,
         username: currentUser?.username,
+        alreadySyncedByBackend: apiSynced,
       );
     } catch (_) {}
 

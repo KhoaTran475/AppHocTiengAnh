@@ -1052,14 +1052,19 @@ def delete_skill_lesson(db: Session, lesson_id: str) -> bool:
     return True
 
 
-def import_skill_lessons_from_data(db: Session, items: List[Dict[str, Any]]) -> Dict[str, Any]:
+def import_skill_lessons_from_data(
+    db: Session,
+    items: List[Dict[str, Any]],
+    default_skill_type: Optional[str] = None,
+) -> Dict[str, Any]:
     """Import hàng loạt đề thi từ JSON hoặc dữ liệu Excel đã parse."""
     imported_count = 0
     errors = []
+    fallback_skill = (default_skill_type or "reading").strip().lower()
     
     for idx, item in enumerate(items):
         try:
-            skill_type = str(item.get("skill_type", "reading")).strip().lower()
+            skill_type = str(item.get("skill_type") or fallback_skill).strip().lower()
             if skill_type not in ["reading", "listening", "speaking", "writing"]:
                 errors.append(f"Mục {idx+1}: Kỹ năng '{skill_type}' không hợp lệ.")
                 continue
@@ -1264,7 +1269,8 @@ def grade_reading(lesson: SkillLesson, user_answers: Dict[str, str]) -> Dict[str
     """Chấm điểm bài đọc IELTS Reading theo cơ chế Vượt ải."""
     questions = lesson.content_json.get("questions", [])
     total = len(questions)
-    pass_req = lesson.pass_score_required or max(1, total - 1)
+    pass_cond = lesson.pass_condition if isinstance(lesson.pass_condition, dict) else {}
+    pass_req = int(pass_cond.get("min_correct") or lesson.pass_score_required or max(1, total - 1))
     score = 0
     question_results = []
 
@@ -1285,9 +1291,9 @@ def grade_reading(lesson: SkillLesson, user_answers: Dict[str, str]) -> Dict[str
         })
 
     passed = score >= pass_req
-    stars = 3 if score == total else (2 if passed else (1 if score > 0 else 0))
+    stars = 3 if (total > 0 and score == total) else (2 if passed else (1 if score > 0 else 0))
 
-    if score == total:
+    if total > 0 and score == total:
         band = lesson.band_score_target
     elif passed:
         band = str(max(5.5, float(lesson.band_score_target.replace("+", "")) - 0.5))
@@ -1311,7 +1317,8 @@ def grade_listening(lesson: SkillLesson, user_answers: Dict[str, str]) -> Dict[s
     """Chấm điểm bài nghe IELTS Listening theo cơ chế Vượt ải."""
     questions = lesson.content_json.get("questions", [])
     total = len(questions)
-    pass_req = lesson.pass_score_required or 2
+    pass_cond = lesson.pass_condition if isinstance(lesson.pass_condition, dict) else {}
+    pass_req = int(pass_cond.get("min_correct") or lesson.pass_score_required or 2)
     score = 0
     question_results = []
 
@@ -1331,16 +1338,16 @@ def grade_listening(lesson: SkillLesson, user_answers: Dict[str, str]) -> Dict[s
         })
 
     passed = score >= pass_req
-    stars = 3 if score == total else (2 if passed else (1 if score > 0 else 0))
+    stars = 3 if (total > 0 and score == total) else (2 if passed else (1 if score > 0 else 0))
 
-    if score == total:
+    if total > 0 and score == total:
         band = lesson.band_score_target
     elif passed:
         band = str(max(5.5, float(lesson.band_score_target.replace("+", "")) - 0.5))
     else:
         band = "5.5"
 
-    feedback = f"🎉 Chúc mừng bạn đã vượt qua {lesson.difficulty_label}!" if passed else f"Cần đúng ít nhất {pass_req}/{total} câu để vượt ải này. Hãy cố gắng luyện tập lại!"
+    feedback = f"🎉 Chúc mừng bạn đã vượt qua {lesson.difficulty_label or 'ải Listening'}!" if passed else f"Cần đúng ít nhất {pass_req}/{total} câu để vượt ải này. Hãy cố gắng luyện tập lại!"
 
     return {
         "score": score,
@@ -1356,7 +1363,8 @@ def grade_listening(lesson: SkillLesson, user_answers: Dict[str, str]) -> Dict[s
 def grade_writing(lesson: SkillLesson, essay_text: str) -> Dict[str, Any]:
     """Chấm điểm bài viết IELTS Writing tự động theo cơ chế Vượt ải."""
     words = len(essay_text.strip().split()) if essay_text else 0
-    min_words = lesson.content_json.get("minWordCount", 150)
+    pass_cond = lesson.pass_condition if isinstance(lesson.pass_condition, dict) else {}
+    min_words = int(pass_cond.get("min_words") or lesson.content_json.get("minWordCount", 150))
     academic_vocab = lesson.content_json.get("academicVocabulary", [])
 
     if words < 25:
@@ -1367,13 +1375,13 @@ def grade_writing(lesson: SkillLesson, essay_text: str) -> Dict[str, Any]:
     matched_vocab = []
     for v in academic_vocab:
         clean = v.split("(")[0].strip().lower()
-        if clean in text_lower:
+        if clean and clean in text_lower:
             matched_vocab.append(clean)
 
     bonus = len(matched_vocab)
 
     target_band_num = float(lesson.band_score_target.replace("+", ""))
-    pass_band_req = float(lesson.pass_score_required or 6.0)
+    pass_band_req = float(pass_cond.get("min_band") or lesson.pass_score_required or 6.0)
 
     # Thuật toán tính band score
     if words < min_words * 0.7:
@@ -1422,8 +1430,9 @@ def grade_speaking(lesson: SkillLesson, ratings: Dict[str, int]) -> Dict[str, An
     avg = (fluency + vocab + pron) / 3.0
     band = str(round(avg, 1))
 
+    pass_cond = lesson.pass_condition if isinstance(lesson.pass_condition, dict) else {}
     target_band_num = float(lesson.band_score_target.replace("+", ""))
-    pass_band_req = float(lesson.pass_score_required or 6.0)
+    pass_band_req = float(pass_cond.get("min_band") or lesson.pass_score_required or 6.0)
 
     passed = avg >= pass_band_req
 

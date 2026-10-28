@@ -745,6 +745,7 @@ class _SkillLessonEditDialogState extends State<SkillLessonEditDialog> {
           final q = entry.value;
 
           return Card(
+            key: ObjectKey(q),
             margin: const EdgeInsets.only(bottom: 12),
             shape: RoundedRectangleBorder(
               borderRadius: BorderRadius.circular(10),

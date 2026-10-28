@@ -189,6 +189,7 @@ class _SkillImportDialogState extends State<SkillImportDialog> {
       final res = await ApiService.instance.importSkillLessonsFile(
         fileBytes: _selectedFile!.bytes!,
         fileName: _selectedFile!.name,
+        skillType: _selectedSkill,
       );
 
       if (!mounted) return;
