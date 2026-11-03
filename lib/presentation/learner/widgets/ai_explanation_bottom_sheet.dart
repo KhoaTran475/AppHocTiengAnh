@@ -1,7 +1,10 @@
 import 'dart:async';
+import 'dart:convert';
 import 'package:flutter/material.dart';
 import '../../../core/theme/app_theme.dart';
 import '../../../data/datasources/api_service.dart';
+import '../../../data/models/note_model.dart';
+import 'note_button.dart';
 
 /// Modal Bottom Sheet hiển thị Giải thích chi tiết, Phân tích Bẫy đề & Từ vựng then chốt
 /// được sinh thông minh bởi mô hình AI Qwen 2.5 7B Local (có lưu cache trên Supabase PostgreSQL).
@@ -12,6 +15,7 @@ class AiExplanationBottomSheet extends StatefulWidget {
   final String questionText;
   final String correctAnswer;
   final String? initialExplanation;
+  final String? skillType;
 
   const AiExplanationBottomSheet({
     super.key,
@@ -21,6 +25,7 @@ class AiExplanationBottomSheet extends StatefulWidget {
     required this.questionText,
     required this.correctAnswer,
     this.initialExplanation,
+    this.skillType,
   });
 
   static Future<void> show(
@@ -31,6 +36,7 @@ class AiExplanationBottomSheet extends StatefulWidget {
     required String questionText,
     required String correctAnswer,
     String? initialExplanation,
+    String? skillType,
   }) {
     return showModalBottomSheet(
       context: context,
@@ -43,6 +49,7 @@ class AiExplanationBottomSheet extends StatefulWidget {
         questionText: questionText,
         correctAnswer: correctAnswer,
         initialExplanation: initialExplanation,
+        skillType: skillType,
       ),
     );
   }
@@ -112,6 +119,27 @@ class _AiExplanationBottomSheetState extends State<AiExplanationBottomSheet> {
     } finally {
       _timer?.cancel();
     }
+  }
+
+  /// Trích xuất nội dung giải thích đầy đủ để lưu vào Sổ tay
+  String _buildExplanationContent() {
+    final data = _explanationData ?? {};
+    final whyCorrect = data['why_correct'] as String? ?? widget.initialExplanation ?? '';
+    final whyTrap = data['why_trap'] as String? ?? '';
+    final strategyTips = data['strategy_tips'] as String? ?? '';
+
+    final buffer = StringBuffer();
+    buffer.writeln('Đáp án chính xác: ${widget.correctAnswer}');
+    if (whyCorrect.isNotEmpty) {
+      buffer.writeln('\n🎯 Giải thích dẫn chứng:\n$whyCorrect');
+    }
+    if (whyTrap.isNotEmpty) {
+      buffer.writeln('\n⚠️ Bẫy đề & Sai lầm thường gặp:\n$whyTrap');
+    }
+    if (strategyTips.isNotEmpty) {
+      buffer.writeln('\n💡 Mẹo làm bài:\n$strategyTips');
+    }
+    return buffer.toString().trim();
   }
 
   @override
@@ -195,6 +223,37 @@ class _AiExplanationBottomSheetState extends State<AiExplanationBottomSheet> {
                         ],
                       ),
                     ),
+                    // Nút Ghim/Lưu giải thích AI vào Sổ tay
+                    Builder(
+                      builder: (context) {
+                        final resolvedSource = widget.skillType ??
+                            (widget.lessonId.toLowerCase().startsWith('l') ||
+                                    widget.lessonId.toLowerCase().contains('listen')
+                                ? NoteSource.listening
+                                : NoteSource.reading);
+                        return NoteButton(
+                          title: 'Giải thích AI câu ${widget.questionId}: ${widget.questionText}',
+                          type: NoteType.feedback,
+                          source: resolvedSource,
+                          sourceRef: jsonEncode({
+                            'lesson_id': widget.lessonId,
+                            'question_id': widget.questionId,
+                            'correct_answer': widget.correctAnswer,
+                            'skill_type': resolvedSource,
+                          }),
+                          content: _buildExplanationContent(),
+                          userNote: 'Giải thích AI Qwen 2.5 cho câu hỏi ${widget.questionId}',
+                          tags: [
+                            'AI Giải thích',
+                            resolvedSource == NoteSource.listening ? 'Listening' : 'Reading',
+                          ],
+                          size: 20,
+                          showBorder: true,
+                          tooltip: 'Ghim / Lưu giải thích vào Sổ tay',
+                        );
+                      },
+                    ),
+                    const SizedBox(width: 4),
                     IconButton(
                       icon: const Icon(Icons.close_rounded, color: Colors.black54),
                       onPressed: () => Navigator.of(context).pop(),

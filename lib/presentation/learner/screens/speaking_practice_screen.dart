@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:convert';
 import 'package:flutter/material.dart';
 import 'package:flutter_tts/flutter_tts.dart';
 import 'package:provider/provider.dart';
@@ -6,9 +7,12 @@ import '../../../core/services/practice_service.dart';
 import '../../../core/services/skill_progress_service.dart';
 import '../../../core/theme/app_theme.dart';
 import '../../../data/models/skill_models.dart';
+import '../../../data/models/note_model.dart';
 import '../../../data/repositories/skill_repository.dart';
 import '../../../data/datasources/api_service.dart';
 import '../../auth/providers/auth_provider.dart';
+import '../widgets/note_button.dart';
+import '../widgets/quick_note_fab.dart';
 
 /// Màn hình Luyện thi IELTS Speaking chuyên sâu theo cơ chế Vượt ải (Gamified Stages).
 /// Tính năng:
@@ -585,6 +589,20 @@ class _SpeakingPracticeScreenState extends State<SpeakingPracticeScreen> {
             _buildPart2View(),
           ],
         ),
+        floatingActionButton: QuickNoteFab(
+          source: NoteSource.speaking,
+          sourceRef: NoteSourceRef.encode(
+            screen: NoteSource.speaking,
+            lessonId: _selectedLesson.id,
+            stageNumber: _selectedLesson.stageNumber,
+            title: _selectedLesson.title,
+            subtitle: 'Ải ${_selectedLesson.stageNumber} • Band ${_selectedLesson.bandScoreTarget}',
+          ),
+          initialTags: ['speaking', 'stage_${_selectedLesson.stageNumber}'],
+          backgroundColor: const Color(0xFF7C3AED),
+          heroTag: 'fab_speaking_quick_note',
+          tooltip: 'Ghi chú Speaking',
+        ),
       ),
     );
   }
@@ -615,6 +633,7 @@ class _SpeakingPracticeScreenState extends State<SpeakingPracticeScreen> {
           }),
           const SizedBox(height: 20),
           _buildEvaluationSection(),
+          const SizedBox(height: 72),
         ],
       ),
     );
@@ -694,6 +713,21 @@ class _SpeakingPracticeScreenState extends State<SpeakingPracticeScreen> {
                       icon: const Icon(Icons.volume_up_rounded, color: _violetColor, size: 22),
                       tooltip: 'Nghe phát âm AI',
                       onPressed: () => _speakText(item.sampleAnswer),
+                    ),
+                    NoteButton(
+                      title: item.sampleAnswer,
+                      type: NoteType.sentence,
+                      source: NoteSource.speaking,
+                      sourceRef: jsonEncode({
+                        'lesson_id': _selectedLesson.id,
+                        'part': 1,
+                        'question': item.question,
+                      }),
+                      content: 'Câu trả lời mẫu Part 1:\n"${item.sampleAnswer}"\n🇻🇳 ${item.translation}',
+                      userNote: 'Hỏi: "${item.question}"',
+                      tags: const ['Speaking', 'Part 1'],
+                      size: 20,
+                      tooltip: 'Lưu câu trả lời mẫu vào Sổ tay',
                     ),
                   ],
                 ),
@@ -843,6 +877,23 @@ class _SpeakingPracticeScreenState extends State<SpeakingPracticeScreen> {
                       tooltip: 'Nghe toàn bộ bài nói Part 2',
                       onPressed: () => _speakText(_selectedLesson.part2SampleAnswer),
                     ),
+                    const SizedBox(width: 4),
+                    NoteButton(
+                      title: 'Bài mẫu Part 2 Band ${_selectedLesson.bandScoreTarget}: ${_selectedLesson.topic}',
+                      type: NoteType.sentence,
+                      source: NoteSource.speaking,
+                      sourceRef: jsonEncode({
+                        'lesson_id': _selectedLesson.id,
+                        'part': 2,
+                        'topic': _selectedLesson.topic,
+                      }),
+                      content: 'Bài nói mẫu Part 2:\n"${_selectedLesson.part2SampleAnswer}"\n\n🇻🇳 Bản dịch:\n${_selectedLesson.part2SampleTranslation}',
+                      userNote: 'Chủ đề: ${_selectedLesson.topic}',
+                      tags: ['Speaking', 'Part 2', 'Band ${_selectedLesson.bandScoreTarget}'],
+                      size: 20,
+                      showBorder: true,
+                      tooltip: 'Lưu bài nói mẫu Part 2 vào Sổ tay',
+                    ),
                   ],
                 ),
                 const SizedBox(height: 8),
@@ -881,6 +932,7 @@ class _SpeakingPracticeScreenState extends State<SpeakingPracticeScreen> {
           ),
           const SizedBox(height: 20),
           _buildEvaluationSection(),
+          const SizedBox(height: 72),
         ],
       ),
     );
@@ -1057,6 +1109,23 @@ class _SpeakingPracticeScreenState extends State<SpeakingPracticeScreen> {
                   'Band $avgBand',
                   style: const TextStyle(fontSize: 15, fontWeight: FontWeight.bold, color: _violetColor),
                 ),
+              ),
+              const SizedBox(width: 8),
+              NoteButton(
+                title: 'Đánh giá Speaking Stage ${_selectedLesson.stageNumber}: ${_selectedLesson.title}',
+                type: NoteType.feedback,
+                source: NoteSource.speaking,
+                sourceRef: jsonEncode({
+                  'lesson_id': _selectedLesson.id,
+                  'stage': _selectedLesson.stageNumber,
+                  'band': avgBand,
+                }),
+                content: 'Kết quả Speaking Stage ${_selectedLesson.stageNumber} (Band $avgBand):\n• Lưu loát (Fluency): ${_fluencyRating.toStringAsFixed(1)}\n• Từ vựng (Lexical): ${_vocabularyRating.toStringAsFixed(1)}\n• Phát âm (Pronunciation): ${_pronunciationRating.toStringAsFixed(1)}',
+                userNote: 'Chủ đề: ${_selectedLesson.title} - ${_selectedLesson.topic}',
+                tags: ['Speaking', 'Stage ${_selectedLesson.stageNumber}', 'Band $avgBand'],
+                size: 20,
+                showBorder: true,
+                tooltip: 'Lưu kết quả đánh giá Speaking vào Sổ tay',
               ),
             ],
           ),

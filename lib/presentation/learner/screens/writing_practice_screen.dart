@@ -1,14 +1,18 @@
 import 'dart:async';
+import 'dart:convert';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import '../../../core/services/practice_service.dart';
 import '../../../core/services/skill_progress_service.dart';
 import '../../../core/theme/app_theme.dart';
 import '../../../data/models/skill_models.dart';
+import '../../../data/models/note_model.dart';
 import '../../../data/repositories/skill_repository.dart';
 import '../../../data/datasources/api_service.dart';
 import '../../auth/providers/auth_provider.dart';
 import '../widgets/dynamic_ielts_chart_widget.dart';
+import '../widgets/note_button.dart';
+import '../widgets/quick_note_fab.dart';
 
 /// Màn hình Luyện thi IELTS Writing chuyên sâu theo cơ chế Vượt ải (Gamified Stages).
 /// Tính năng:
@@ -310,9 +314,11 @@ class _WritingPracticeScreenState extends State<WritingPracticeScreen> {
       }
       _aiUsed = res['ai_used'] as bool? ?? false;
     } catch (e) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('Thông báo: $e'), backgroundColor: Colors.amber[900]),
-      );
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Thông báo: $e'), backgroundColor: Colors.amber[900]),
+        );
+      }
     } finally {
       _gradingTimer?.cancel();
       if (mounted) {
@@ -1013,9 +1019,26 @@ class _WritingPracticeScreenState extends State<WritingPracticeScreen> {
                 ),
               ],
             ),
+            const SizedBox(height: 80),
           ],
         ),
       ),
+      floatingActionButton: (MediaQuery.of(context).viewInsets.bottom > 0)
+          ? null
+          : QuickNoteFab(
+              source: NoteSource.writing,
+              sourceRef: NoteSourceRef.encode(
+                screen: NoteSource.writing,
+                lessonId: _selectedLesson.id,
+                stageNumber: _selectedLesson.stageNumber,
+                title: _selectedLesson.title,
+                subtitle: 'Ải ${_selectedLesson.stageNumber} • Band ${_selectedLesson.bandScoreTarget}',
+              ),
+              initialTags: ['writing', 'stage_${_selectedLesson.stageNumber}'],
+              backgroundColor: const Color(0xFFD97706),
+              heroTag: 'fab_writing_quick_note',
+              tooltip: 'Ghi chú Writing',
+            ),
     );
   }
 
@@ -1381,6 +1404,23 @@ class _WritingPracticeScreenState extends State<WritingPracticeScreen> {
                   style: const TextStyle(fontSize: 14, fontWeight: FontWeight.bold, color: Colors.white),
                 ),
               ),
+              const SizedBox(width: 8),
+              NoteButton(
+                title: 'Đánh giá Writing Stage ${_selectedLesson.stageNumber}: ${_selectedLesson.title}',
+                type: NoteType.feedback,
+                source: NoteSource.writing,
+                sourceRef: jsonEncode({
+                  'lesson_id': _selectedLesson.id,
+                  'stage': _selectedLesson.stageNumber,
+                  'band': _estimatedBand,
+                }),
+                content: 'Overall Band: $_estimatedBand\n🎯 Task Response ($taskBand): $taskComment\n🔗 Cohesion ($ccBand): $ccComment\n📚 Lexical ($lrBand): $lrComment\n✍️ Grammar ($grBand): $grComment',
+                userNote: 'Đề bài: ${_selectedLesson.title}',
+                tags: ['Writing', 'Stage ${_selectedLesson.stageNumber}', 'Band $_estimatedBand'],
+                size: 20,
+                showBorder: true,
+                tooltip: 'Lưu toàn bộ đánh giá Writing vào Sổ tay',
+              ),
             ],
           ),
 
@@ -1443,6 +1483,16 @@ class _WritingPracticeScreenState extends State<WritingPracticeScreen> {
                       children: [
                         const Text('✅ Sửa thành: ', style: TextStyle(fontSize: 12.5, fontWeight: FontWeight.bold, color: Colors.green)),
                         Expanded(child: Text(fix.toString(), style: const TextStyle(fontSize: 12.5, fontWeight: FontWeight.w600, color: Colors.green))),
+                        NoteButton(
+                          title: 'Sửa lỗi: "$quote" -> "$fix"',
+                          type: NoteType.sentence,
+                          source: NoteSource.writing,
+                          sourceRef: jsonEncode({'lesson_id': _selectedLesson.id, 'quote': quote, 'fix': fix}),
+                          content: 'Cụm gốc: "$quote"\nSửa thành: "$fix"\nGiải thích: $explain',
+                          tags: const ['Writing', 'Sửa lỗi'],
+                          size: 18,
+                          tooltip: 'Lưu câu sửa lỗi vào Sổ tay',
+                        ),
                       ],
                     ),
                     if (explain.toString().isNotEmpty) ...[
@@ -1515,15 +1565,27 @@ class _WritingPracticeScreenState extends State<WritingPracticeScreen> {
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  const Row(
+                  Row(
                     children: [
-                      Icon(Icons.auto_awesome_rounded, color: Colors.indigo, size: 18),
-                      SizedBox(width: 6),
-                      Expanded(
+                      const Icon(Icons.auto_awesome_rounded, color: Colors.indigo, size: 18),
+                      const SizedBox(width: 6),
+                      const Expanded(
                         child: Text(
                           'Gợi ý viết lại nâng Band 8.0+ từ bài của bạn:',
                           style: TextStyle(fontSize: 13, fontWeight: FontWeight.bold, color: Colors.indigo),
                         ),
+                      ),
+                      NoteButton(
+                        title: 'Đoạn văn Band 8.0+ Writing Stage ${_selectedLesson.stageNumber}',
+                        type: NoteType.sentence,
+                        source: NoteSource.writing,
+                        sourceRef: jsonEncode({'lesson_id': _selectedLesson.id, 'stage': _selectedLesson.stageNumber}),
+                        content: improvedParagraph,
+                        userNote: 'Gợi ý nâng Band 8.0+ cho đề bài: ${_selectedLesson.title}',
+                        tags: const ['Writing', 'Band 8.0+'],
+                        size: 19,
+                        showBorder: true,
+                        tooltip: 'Lưu đoạn văn Band 8.0+ vào Sổ tay',
                       ),
                     ],
                   ),
@@ -1570,6 +1632,22 @@ class _WritingPracticeScreenState extends State<WritingPracticeScreen> {
                   'Band $band',
                   style: const TextStyle(fontSize: 11, fontWeight: FontWeight.bold, color: Colors.white),
                 ),
+              ),
+              const SizedBox(width: 6),
+              NoteButton(
+                title: '$title (Band $band)',
+                type: NoteType.feedback,
+                source: NoteSource.writing,
+                sourceRef: jsonEncode({
+                  'lesson_id': _selectedLesson.id,
+                  'stage': _selectedLesson.stageNumber,
+                  'criterion': title,
+                  'band': band,
+                }),
+                content: comment,
+                tags: const ['Writing', 'Tiêu chí'],
+                size: 16,
+                tooltip: 'Lưu nhận xét tiêu chí vào Sổ tay',
               ),
             ],
           ),

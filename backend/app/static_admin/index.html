@@ -1,15 +1,18 @@
 <!DOCTYPE html>
 <html lang="vi">
+
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>IELTS Vision - Cổng Quản Trị Hệ Thống (Admin Portal)</title>
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-  <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+  <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&display=swap"
+    rel="stylesheet">
   <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css">
   <link rel="stylesheet" href="style.css?v=20261031_02" />
 </head>
+
 <body>
   <!-- Màn hình Đăng Nhập (Modal Overlay) -->
   <div id="login-modal" class="auth-overlay">
@@ -34,7 +37,8 @@
         </button>
       </form>
       <div class="auth-hint">
-        <small><i class="fa-solid fa-circle-info"></i> Mặc định: <strong>admin</strong> / <strong>password123</strong></small>
+        <small><i class="fa-solid fa-circle-info"></i> Mặc định: <strong>admin</strong> /
+          <strong>password123</strong></small>
       </div>
     </div>
   </div>
@@ -58,22 +62,19 @@
         </button>
         <button class="nav-item" data-tab="tab-skills">
           <i class="fa-solid fa-trophy"></i>
-          <span>4 Kỹ Năng & 5 Ải</span>
-          <span class="nav-badge" id="skills-badge">Mới</span>
+          <span>Quản Lý Kỹ Năng</span>
         </button>
         <button class="nav-item" data-tab="tab-vocab">
           <i class="fa-solid fa-brain"></i>
-          <span>Kho Từ Vựng AI (82)</span>
+          <span>Kho Từ Vựng</span>
         </button>
         <button class="nav-item" data-tab="tab-vocab-config">
           <i class="fa-solid fa-sliders"></i>
           <span>Cấu hình AI & Học Tập</span>
-          <span class="nav-badge" style="background:#8b5cf6;color:white;">Qwen</span>
         </button>
         <button class="nav-item" data-tab="tab-ai-grading">
           <i class="fa-solid fa-clock-rotate-left"></i>
-          <span>Lịch sử Chấm AI</span>
-          <span class="nav-badge" style="background:#0ea5e9;color:white;">Log</span>
+          <span>Lịch Sử Chấm Điểm</span>
         </button>
         <button class="nav-item" data-tab="tab-users">
           <i class="fa-solid fa-users-gear"></i>
@@ -114,7 +115,8 @@
               <i class="fa-regular fa-clock"></i>
               <span id="topbar-last-sync-text">Cập nhật: --</span>
             </div>
-            <div id="topbar-unsaved-indicator" class="status-chip unsaved" style="display: none;" title="Có thay đổi chưa được ghi vào CSDL">
+            <div id="topbar-unsaved-indicator" class="status-chip unsaved" style="display: none;"
+              title="Có thay đổi chưa được ghi vào CSDL">
               <span class="status-dot-pulse amber"></span>
               <span>Có thay đổi chưa lưu</span>
             </div>
@@ -138,7 +140,7 @@
             <div class="kpi-info">
               <span class="kpi-label">Tổng Từ Vựng AI</span>
               <h3 class="kpi-value" id="kpi-mappings">82</h3>
-              <span class="kpi-sub">82 nhãn IELTS YOLOv8</span>
+              <span class="kpi-sub">80 nhãn IELTS YOLOv8</span>
             </div>
           </div>
           <div class="kpi-card card-blue">
@@ -185,19 +187,24 @@
             <div class="card-body">
               <ul class="system-status-list">
                 <li>
-                  <span class="status-badge success"><i class="fa-solid fa-check"></i> Hoạt động</span>
+                  <span id="status-fastapi" class="status-badge success"><i class="fa-solid fa-check"></i> Hoạt động</span>
                   <strong>FastAPI Backend</strong>
-                  <p>Cung cấp REST API & Phân quyền RBAC JWT</p>
+                  <p>Cung cấp REST API, xác thực JWT & phân quyền RBAC (Admin / Learner)</p>
                 </li>
                 <li>
-                  <span class="status-badge success"><i class="fa-solid fa-check"></i> Đã kết nối</span>
-                  <strong>Cơ sở dữ liệu SQLite / Cloud</strong>
-                  <p>Lưu trữ đề thi, người dùng và 5 ải vượt bài</p>
+                  <span id="status-db" class="status-badge success"><i class="fa-solid fa-check"></i> Đã kết nối</span>
+                  <strong>Supabase Cloud & SQLite Local</strong>
+                  <p>PostgreSQL Cloud lưu đề thi 4 kỹ năng & sổ tay; SQLite lưu tài khoản & offline cache</p>
                 </li>
                 <li>
-                  <span class="status-badge success"><i class="fa-solid fa-check"></i> Sẵn sàng</span>
-                  <strong>AI Vision Service</strong>
-                  <p>YOLOv8n Object Detection 82 COCO classes</p>
+                  <span id="status-ollama-card" class="status-badge success"><i class="fa-solid fa-check"></i> Sẵn sàng</span>
+                  <strong>AI Grading Engine (Ollama Qwen 2.5)</strong>
+                  <p id="status-ollama-desc">Qwen 2.5 7B chấm điểm IELTS Writing 4 tiêu chí và giải thích Reading / Listening</p>
+                </li>
+                <li>
+                  <span id="status-vision" class="status-badge success"><i class="fa-solid fa-check"></i> Sẵn sàng</span>
+                  <strong>AI Vision Service (Flutter On-device)</strong>
+                  <p>YOLOv8n TFLite nhận diện 80 lớp COCO chuyển đổi sang từ vựng học thuật Band 7.0 - 8.5+</p>
                 </li>
               </ul>
             </div>
@@ -260,6 +267,12 @@
         <div id="skills-lessons-list" class="lessons-grid">
           <!-- Render via JS -->
         </div>
+
+        <!-- Pagination Bar cho 4 Kỹ Năng & 5 Ải -->
+        <div class="pagination-bar" id="skills-pagination" style="margin-top: 16px; border-radius: 12px; border: 1px solid #e2e8f0; display: none;">
+          <div class="pagination-info" id="skills-pagination-info"></div>
+          <div class="pagination-actions" id="skills-pagination-actions"></div>
+        </div>
       </section>
 
       <!-- TAB 3: KHO TỪ VỰNG AI (82 LABELS) -->
@@ -267,7 +280,8 @@
         <div class="vocab-header-bar">
           <div class="search-box flex-1">
             <i class="fa-solid fa-magnifying-glass"></i>
-            <input type="text" id="vocab-search-input" placeholder="Tìm kiếm nhãn AI (person, car...), từ học thuật (individual, vehicle...)" />
+            <input type="text" id="vocab-search-input"
+              placeholder="Tìm kiếm nhãn AI (person, car...), từ học thuật (individual, vehicle...)" />
           </div>
           <div class="vocab-filters">
             <select id="vocab-band-filter" class="form-select">
@@ -300,6 +314,11 @@
               <!-- Render via JS -->
             </tbody>
           </table>
+          <!-- Pagination Bar cho Kho Từ Vựng AI -->
+          <div class="pagination-bar" id="vocab-pagination" style="display: none;">
+            <div class="pagination-info" id="vocab-pagination-info"></div>
+            <div class="pagination-actions" id="vocab-pagination-actions"></div>
+          </div>
         </div>
       </section>
 
@@ -331,6 +350,11 @@
               <!-- Render via JS -->
             </tbody>
           </table>
+          <!-- Pagination Bar cho Quản Lý Tài Khoản -->
+          <div class="pagination-bar" id="users-pagination" style="display: none;">
+            <div class="pagination-info" id="users-pagination-info"></div>
+            <div class="pagination-actions" id="users-pagination-actions"></div>
+          </div>
         </div>
       </section>
 
@@ -350,13 +374,15 @@
                   </span>
                 </div>
                 <p class="config-page-subtitle">
-                  Thiết lập mô hình Qwen local, tham số sáng tạo, quy chế đề thi vượt ải và cơ chế đồng bộ kho từ vựng toàn hệ thống.
+                  Thiết lập mô hình Qwen local, tham số sáng tạo, quy chế đề thi vượt ải và cơ chế đồng bộ kho từ vựng
+                  toàn hệ thống.
                 </p>
               </div>
             </div>
           </div>
           <div class="config-header-actions">
-            <button id="btn-reset-vocab-config-top" class="btn btn-outline" title="Đặt lại các trường về giá trị mặc định (chưa lưu CSDL)">
+            <button id="btn-reset-vocab-config-top" class="btn btn-outline"
+              title="Đặt lại các trường về giá trị mặc định (chưa lưu CSDL)">
               <i class="fa-solid fa-rotate-left"></i> Khôi phục mặc định
             </button>
             <button id="btn-save-vocab-config-top" class="btn btn-primary" title="Lưu và áp dụng cấu hình ngay lập tức">
@@ -370,7 +396,8 @@
           <div class="alert-icon"><i class="fa-solid fa-triangle-exclamation"></i></div>
           <div class="alert-content">
             <strong>Cảnh báo mô hình AI:</strong>
-            <span id="model-warning-text">Mô hình đã lưu không còn trên Ollama. Vui lòng chọn mô hình đã cài đặt bên dưới trước khi lưu.</span>
+            <span id="model-warning-text">Mô hình đã lưu không còn trên Ollama. Vui lòng chọn mô hình đã cài đặt bên
+              dưới trước khi lưu.</span>
           </div>
         </div>
 
@@ -422,7 +449,8 @@
                       <option value="qwen2.5:14b">qwen2.5:14b (Chuyên sâu học thuật)</option>
                     </select>
                   </div>
-                  <button id="btn-refresh-models" class="btn btn-outline btn-icon" title="Quét lại các model trên Ollama (GET /api/tags)">
+                  <button id="btn-refresh-models" class="btn btn-outline btn-icon"
+                    title="Quét lại các model trên Ollama (GET /api/tags)">
                     <i class="fa-solid fa-rotate"></i>
                   </button>
                 </div>
@@ -439,18 +467,25 @@
                   <span id="val-temperature" class="slider-badge badge-temp">0.3</span>
                 </div>
 
-                <input type="range" id="config-temperature" min="0" max="10" step="1" value="3" class="custom-styled-range" />
+                <input type="range" id="config-temperature" min="0" max="10" step="1" value="3"
+                  class="custom-styled-range" />
 
                 <!-- Presets Pills for Temperature -->
                 <div class="presets-row">
-                  <button type="button" class="preset-chip" data-slider="config-temperature" data-val="0">0.0 (Chính xác)</button>
-                  <button type="button" class="preset-chip active" data-slider="config-temperature" data-val="3">0.3 (Chuẩn)</button>
-                  <button type="button" class="preset-chip" data-slider="config-temperature" data-val="5">0.5 (Cân bằng)</button>
-                  <button type="button" class="preset-chip" data-slider="config-temperature" data-val="7">0.7 (Sáng tạo)</button>
-                  <button type="button" class="preset-chip" data-slider="config-temperature" data-val="10">1.0 (Sáng tạo cao)</button>
+                  <button type="button" class="preset-chip" data-slider="config-temperature" data-val="0">0.0 (Chính
+                    xác)</button>
+                  <button type="button" class="preset-chip active" data-slider="config-temperature" data-val="3">0.3
+                    (Chuẩn)</button>
+                  <button type="button" class="preset-chip" data-slider="config-temperature" data-val="5">0.5 (Cân
+                    bằng)</button>
+                  <button type="button" class="preset-chip" data-slider="config-temperature" data-val="7">0.7 (Sáng
+                    tạo)</button>
+                  <button type="button" class="preset-chip" data-slider="config-temperature" data-val="10">1.0 (Sáng tạo
+                    cao)</button>
                 </div>
                 <p class="field-note">
-                  <i class="fa-solid fa-circle-info"></i> Nhiệt độ thấp (0.0 - 0.3) phù hợp nhất với định dạng đề thi IELTS chuẩn mực và định nghĩa chính xác.
+                  <i class="fa-solid fa-circle-info"></i> Nhiệt độ thấp (0.0 - 0.3) phù hợp nhất với định dạng đề thi
+                  IELTS chuẩn mực và định nghĩa chính xác.
                 </p>
               </div>
 
@@ -477,7 +512,8 @@
                   <div class="json-preview-wrap">
                     <div class="json-preview-bar">
                       <span><i class="fa-solid fa-code"></i> JSON Response Preview</span>
-                      <button type="button" id="btn-copy-test-json" class="btn-copy-code" title="Sao chép JSON"><i class="fa-regular fa-copy"></i> Sao chép</button>
+                      <button type="button" id="btn-copy-test-json" class="btn-copy-code" title="Sao chép JSON"><i
+                          class="fa-regular fa-copy"></i> Sao chép</button>
                     </div>
                     <pre id="test-result-json" class="json-code-view"></pre>
                   </div>
@@ -493,7 +529,8 @@
                 <div class="icon-avatar gamify-amber"><i class="fa-solid fa-trophy"></i></div>
                 <div>
                   <h4>2. Đề Thi Vượt Cấp (Level-up Quiz)</h4>
-                  <span class="card-subtitle">Quy định số lượng câu hỏi, điều kiện qua ải và xếp hạng sao thành tích</span>
+                  <span class="card-subtitle">Quy định số lượng câu hỏi, điều kiện qua ải và xếp hạng sao thành
+                    tích</span>
                 </div>
               </div>
               <span class="badge-pill badge-gamify">Gamification</span>
@@ -510,13 +547,18 @@
                   <span id="val-quiz-questions" class="slider-badge badge-blue">5 câu</span>
                 </div>
 
-                <input type="range" id="config-quiz-questions" min="3" max="20" step="1" value="5" class="custom-styled-range" />
+                <input type="range" id="config-quiz-questions" min="3" max="20" step="1" value="5"
+                  class="custom-styled-range" />
 
                 <div class="presets-row">
-                  <button type="button" class="preset-chip" data-slider="config-quiz-questions" data-val="3">3 câu</button>
-                  <button type="button" class="preset-chip active" data-slider="config-quiz-questions" data-val="5">5 câu (Chuẩn)</button>
-                  <button type="button" class="preset-chip" data-slider="config-quiz-questions" data-val="10">10 câu</button>
-                  <button type="button" class="preset-chip" data-slider="config-quiz-questions" data-val="20">20 câu</button>
+                  <button type="button" class="preset-chip" data-slider="config-quiz-questions" data-val="3">3
+                    câu</button>
+                  <button type="button" class="preset-chip active" data-slider="config-quiz-questions" data-val="5">5
+                    câu (Chuẩn)</button>
+                  <button type="button" class="preset-chip" data-slider="config-quiz-questions" data-val="10">10
+                    câu</button>
+                  <button type="button" class="preset-chip" data-slider="config-quiz-questions" data-val="20">20
+                    câu</button>
                 </div>
               </div>
 
@@ -530,13 +572,18 @@
                   <span id="val-pass-percentage" class="slider-badge badge-emerald">60%</span>
                 </div>
 
-                <input type="range" id="config-pass-percentage" min="50" max="100" step="10" value="60" class="custom-styled-range" />
+                <input type="range" id="config-pass-percentage" min="50" max="100" step="10" value="60"
+                  class="custom-styled-range" />
 
                 <div class="presets-row">
-                  <button type="button" class="preset-chip" data-slider="config-pass-percentage" data-val="50">50% (Dễ)</button>
-                  <button type="button" class="preset-chip active" data-slider="config-pass-percentage" data-val="60">60% (Chuẩn)</button>
-                  <button type="button" class="preset-chip" data-slider="config-pass-percentage" data-val="80">80% (Khó)</button>
-                  <button type="button" class="preset-chip" data-slider="config-pass-percentage" data-val="100">100%</button>
+                  <button type="button" class="preset-chip" data-slider="config-pass-percentage" data-val="50">50%
+                    (Dễ)</button>
+                  <button type="button" class="preset-chip active" data-slider="config-pass-percentage"
+                    data-val="60">60% (Chuẩn)</button>
+                  <button type="button" class="preset-chip" data-slider="config-pass-percentage" data-val="80">80%
+                    (Khó)</button>
+                  <button type="button" class="preset-chip" data-slider="config-pass-percentage"
+                    data-val="100">100%</button>
                 </div>
               </div>
 
@@ -546,7 +593,8 @@
                 <div class="callout-body">
                   <div class="callout-title">Quy định Vượt ải Hiện tại:</div>
                   <div id="quiz-rule-preview" class="callout-desc">
-                    Học viên cần đạt tối thiểu <strong>3 / 5 câu</strong> (60%) để vượt qua bài kiểm tra và mở khóa Cấp độ tiếp theo.
+                    Học viên cần đạt tối thiểu <strong>3 / 5 câu</strong> (60%) để vượt qua bài kiểm tra và mở khóa Cấp
+                    độ tiếp theo.
                   </div>
                 </div>
               </div>
@@ -568,7 +616,8 @@
                     </div>
                     <div class="star-field-box">
                       <span class="field-sym">≥</span>
-                      <input type="number" id="config-star1" min="0" max="100" step="1" value="60" class="star-number-box" />
+                      <input type="number" id="config-star1" min="0" max="100" step="1" value="60"
+                        class="star-number-box" />
                       <span class="field-unit">%</span>
                     </div>
                   </div>
@@ -580,7 +629,8 @@
                     </div>
                     <div class="star-field-box">
                       <span class="field-sym">≥</span>
-                      <input type="number" id="config-star2" min="0" max="100" step="1" value="80" class="star-number-box" />
+                      <input type="number" id="config-star2" min="0" max="100" step="1" value="80"
+                        class="star-number-box" />
                       <span class="field-unit">%</span>
                     </div>
                   </div>
@@ -592,7 +642,8 @@
                     </div>
                     <div class="star-field-box">
                       <span class="field-sym">=</span>
-                      <input type="number" id="config-star3" min="0" max="100" step="1" value="100" class="star-number-box" />
+                      <input type="number" id="config-star3" min="0" max="100" step="1" value="100"
+                        class="star-number-box" />
                       <span class="field-unit">%</span>
                     </div>
                   </div>
@@ -625,15 +676,21 @@
                   <span id="val-default-gen-count" class="slider-badge badge-indigo">5 từ</span>
                 </div>
 
-                <input type="range" id="config-default-gen-count" min="1" max="15" step="1" value="5" class="custom-styled-range" />
+                <input type="range" id="config-default-gen-count" min="1" max="15" step="1" value="5"
+                  class="custom-styled-range" />
 
                 <div class="presets-row">
-                  <button type="button" class="preset-chip" data-slider="config-default-gen-count" data-val="1">1 từ</button>
-                  <button type="button" class="preset-chip active" data-slider="config-default-gen-count" data-val="5">5 từ (Tối ưu)</button>
-                  <button type="button" class="preset-chip" data-slider="config-default-gen-count" data-val="10">10 từ</button>
-                  <button type="button" class="preset-chip" data-slider="config-default-gen-count" data-val="15">15 từ</button>
+                  <button type="button" class="preset-chip" data-slider="config-default-gen-count" data-val="1">1
+                    từ</button>
+                  <button type="button" class="preset-chip active" data-slider="config-default-gen-count" data-val="5">5
+                    từ (Tối ưu)</button>
+                  <button type="button" class="preset-chip" data-slider="config-default-gen-count" data-val="10">10
+                    từ</button>
+                  <button type="button" class="preset-chip" data-slider="config-default-gen-count" data-val="15">15
+                    từ</button>
                 </div>
-                <small class="field-feedback">Số lượng từ vựng AI sinh ra mỗi khi học viên hoặc admin yêu cầu chủ đề học tập mới.</small>
+                <small class="field-feedback">Số lượng từ vựng AI sinh ra mỗi khi học viên hoặc admin yêu cầu chủ đề học
+                  tập mới.</small>
               </div>
 
               <!-- Auto-cache Toggle -->
@@ -644,7 +701,8 @@
                     <span>Tự động lưu từ vựng mới vào CSDL (Auto-Cache)</span>
                   </div>
                   <p class="toggle-desc">
-                    Thẻ từ vựng do AI tạo ra sẽ được lưu vào kho dùng chung để các học viên khác học lại ngay lập tức mà không cần gọi lại AI gây tốn tài nguyên máy chủ.
+                    Thẻ từ vựng do AI tạo ra sẽ được lưu vào kho dùng chung để các học viên khác học lại ngay lập tức mà
+                    không cần gọi lại AI gây tốn tài nguyên máy chủ.
                   </p>
                 </div>
                 <label class="switch-toggle">
@@ -657,7 +715,8 @@
               <div class="sync-banner-card">
                 <div class="sync-banner-icon"><i class="fa-solid fa-arrows-rotate"></i></div>
                 <div class="sync-banner-text">
-                  Mọi tham số cấu hình trên trang này được đồng bộ tập trung vào CSDL và tự động áp dụng thời gian thực xuống Mobile App của toàn bộ học viên.
+                  Mọi tham số cấu hình trên trang này được đồng bộ tập trung vào CSDL và tự động áp dụng thời gian thực
+                  xuống Mobile App của toàn bộ học viên.
                 </div>
               </div>
             </div>
@@ -669,7 +728,8 @@
         <div class="config-sticky-footer">
           <div class="footer-left-info">
             <div class="sync-time-stamp">
-              <i class="fa-regular fa-clock"></i> Cập nhật lần cuối: <strong id="config-last-updated">Chưa có dữ liệu</strong>
+              <i class="fa-regular fa-clock"></i> Cập nhật lần cuối: <strong id="config-last-updated">Chưa có dữ
+                liệu</strong>
             </div>
             <span id="footer-unsaved-badge" class="badge-unsaved pulse-amber" style="display: none;">
               <i class="fa-solid fa-circle-dot"></i> Có thay đổi chưa lưu
@@ -697,19 +757,21 @@
               </div>
               <div>
                 <div class="title-row">
-                  <h3>Lịch Sử Chấm Điểm &amp; Giải Thích AI Qwen</h3>
+                  <h3>Lịch Sử Chấm Điểm</h3>
                   <span class="system-sync-badge" style="background: rgba(14, 165, 233, 0.15); color: #0ea5e9;">
                     <i class="fa-solid fa-microchip"></i> Qwen 2.5 7B
                   </span>
                 </div>
                 <p class="config-page-subtitle">
-                  Nhật ký chấm điểm 4 tiêu chí Writing, giải thích đáp án Reading/Listening và chấm điểm câu đặt trong Học từ vựng.
+                  Nhật ký chấm điểm 4 tiêu chí Writing, giải thích đáp án Reading/Listening và chấm điểm câu đặt trong
+                  Học từ vựng.
                 </p>
               </div>
             </div>
           </div>
           <div class="config-header-actions">
-            <button id="btn-bulk-delete-ai-logs" class="btn btn-outline" style="display: none; color: #ef4444; border-color: #ef4444;">
+            <button id="btn-bulk-delete-ai-logs" class="btn btn-outline"
+              style="display: none; color: #ef4444; border-color: #ef4444;">
               <i class="fa-solid fa-trash-can"></i> Xóa đã chọn (<span id="bulk-selected-count">0</span>)
             </button>
             <button id="btn-export-ai-logs-csv" class="btn btn-outline" title="Xuất toàn bộ kết quả lọc ra file CSV">
@@ -781,7 +843,8 @@
           <div class="ai-filter-controls">
             <div class="search-box ai-search-wrap">
               <i class="fa-solid fa-magnifying-glass"></i>
-              <input type="text" id="ai-log-search-input" placeholder="Tìm theo học viên, bài học, từ vựng, câu nộp..." />
+              <input type="text" id="ai-log-search-input"
+                placeholder="Tìm theo học viên, bài học, từ vựng, câu nộp..." />
             </div>
 
             <select id="ai-status-filter" class="form-select ai-select-filter">
@@ -836,7 +899,7 @@
           <div class="pagination-info" id="ai-logs-pagination-info">
             Hiển thị trang 1 / 1 (0 bản ghi)
           </div>
-          <div class="pagination-actions">
+          <div class="pagination-actions" id="ai-logs-pagination-actions">
             <button id="btn-ai-logs-prev" class="btn btn-outline btn-sm">
               <i class="fa-solid fa-chevron-left"></i> Trước
             </button>
@@ -887,11 +950,13 @@
         <div class="form-row">
           <div class="form-group flex-2">
             <label>Tiêu đề bài thi / đề bài</label>
-            <input type="text" id="lesson-title" placeholder="VD: The Evolution of Renewable Energy Technologies" required />
+            <input type="text" id="lesson-title" placeholder="VD: The Evolution of Renewable Energy Technologies"
+              required />
           </div>
           <div class="form-group flex-1">
             <label>Chủ đề (Category / Topic)</label>
-            <input type="text" id="lesson-topic" value="General" placeholder="VD: Environment, Technology..." required />
+            <input type="text" id="lesson-topic" value="General" placeholder="VD: Environment, Technology..."
+              required />
           </div>
         </div>
 
@@ -926,9 +991,10 @@
       </div>
       <div class="modal-body">
         <p class="modal-desc">
-          Tải lên file đề thi định dạng <strong>.json</strong>, <strong>.xlsx</strong> hoặc <strong>.csv</strong> để nạp hàng loạt đề thi mà không cần gõ từng câu:
+          Tải lên file đề thi định dạng <strong>.json</strong>, <strong>.xlsx</strong> hoặc <strong>.csv</strong> để nạp
+          hàng loạt đề thi mà không cần gõ từng câu:
         </p>
-        
+
         <div class="form-group">
           <label>Kỹ năng cần import:</label>
           <select id="import-skill-type" class="form-select">
@@ -1007,7 +1073,8 @@
         <!-- Dynamic Render via JS -->
       </div>
       <div class="modal-footer" style="justify-content: space-between;">
-        <button type="button" id="btn-delete-this-log" class="btn btn-outline" style="color: #ef4444; border-color: #ef4444;">
+        <button type="button" id="btn-delete-this-log" class="btn btn-outline"
+          style="color: #ef4444; border-color: #ef4444;">
           <i class="fa-solid fa-trash-can"></i> Xóa bản ghi này
         </button>
         <button type="button" class="btn btn-secondary modal-close">Đóng</button>
@@ -1020,4 +1087,5 @@
 
   <script src="app.js?v=20261031_02"></script>
 </body>
+
 </html>

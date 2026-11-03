@@ -1,3 +1,4 @@
+import 'dart:convert';
 import 'package:flutter/material.dart';
 import 'package:flutter_tts/flutter_tts.dart';
 import 'package:provider/provider.dart';
@@ -5,10 +6,13 @@ import '../../../core/services/listening_progress_service.dart';
 import '../../../core/services/practice_service.dart';
 import '../../../core/theme/app_theme.dart';
 import '../../../data/models/skill_models.dart';
+import '../../../data/models/note_model.dart';
 import '../../../data/repositories/skill_repository.dart';
 import '../../../data/datasources/api_service.dart';
 import '../../auth/providers/auth_provider.dart';
 import '../widgets/ai_explanation_bottom_sheet.dart';
+import '../widgets/note_button.dart';
+import '../widgets/quick_note_fab.dart';
 
 /// Màn hình Luyện thi IELTS Listening Chuyên sâu theo cơ chế Vượt ải (Gamified Stages).
 /// Tính năng:
@@ -36,6 +40,17 @@ class _ListeningPracticeScreenState extends State<ListeningPracticeScreen> {
   bool _isSubmitted = false;
   int _correctCount = 0;
   bool _showTranscript = false;
+
+  // Thời gian phát audio để tính timestamp_ms lưu Sổ tay
+  DateTime? _audioStartTime;
+  int _currentAudioPositionMs = 0;
+
+  int get currentAudioTimestampMs {
+    if (_isPlaying && _audioStartTime != null) {
+      return DateTime.now().difference(_audioStartTime!).inMilliseconds;
+    }
+    return _currentAudioPositionMs;
+  }
 
   // Trạng thái Vượt ải Gamification
   int _highestUnlockedStage = 1;
@@ -149,8 +164,12 @@ class _ListeningPracticeScreenState extends State<ListeningPracticeScreen> {
   Future<void> _toggleAudio() async {
     if (_isPlaying) {
       await _flutterTts.stop();
+      if (_audioStartTime != null) {
+        _currentAudioPositionMs = DateTime.now().difference(_audioStartTime!).inMilliseconds;
+      }
       setState(() => _isPlaying = false);
     } else {
+      _audioStartTime = DateTime.now();
       await _flutterTts.setSpeechRate(_speechRate);
       setState(() => _isPlaying = true);
       await _flutterTts.speak(_selectedLesson.audioScript);
@@ -726,6 +745,7 @@ class _ListeningPracticeScreenState extends State<ListeningPracticeScreen> {
                               questionText: q.questionText,
                               correctAnswer: q.correctAnswer,
                               initialExplanation: q.explanation,
+                              skillType: NoteSource.listening,
                             );
                           },
                           icon: const Icon(Icons.psychology_rounded, size: 18, color: Colors.indigo),
@@ -776,9 +796,23 @@ class _ListeningPracticeScreenState extends State<ListeningPracticeScreen> {
                 ),
               ),
             ),
-            const SizedBox(height: 24),
+            const SizedBox(height: 80),
           ],
         ),
+      ),
+      floatingActionButton: QuickNoteFab(
+        source: NoteSource.listening,
+        sourceRef: NoteSourceRef.encode(
+          screen: NoteSource.listening,
+          lessonId: _selectedLesson.id,
+          stageNumber: _selectedLesson.stageNumber,
+          title: _selectedLesson.title,
+          subtitle: 'Ải ${_selectedLesson.stageNumber} • Band ${_selectedLesson.bandScoreTarget}',
+        ),
+        initialTags: ['listening', 'stage_${_selectedLesson.stageNumber}'],
+        backgroundColor: Colors.indigo,
+        heroTag: 'fab_listening_quick_note',
+        tooltip: 'Ghi chú Listening',
       ),
     );
   }
@@ -903,8 +937,14 @@ class _ListeningPracticeScreenState extends State<ListeningPracticeScreen> {
     );
   }
 
-  /// Khung mở rộng hiển thị kịch bản bài nghe (Audio Transcript)
+  /// Khung mở rộng hiển thị kịch bản bài nghe (Audio Transcript) kèm nút bookmark từng câu
   Widget _buildTranscriptToggle() {
+    final segments = _selectedLesson.audioScript
+        .split(RegExp(r'(?<=[.!?])\s+|\n+'))
+        .map((s) => s.trim())
+        .where((s) => s.isNotEmpty)
+        .toList();
+
     return Container(
       decoration: BoxDecoration(
         color: Colors.white,
@@ -933,13 +973,49 @@ class _ListeningPracticeScreenState extends State<ListeningPracticeScreen> {
                 borderRadius: BorderRadius.circular(12),
                 border: Border.all(color: Colors.grey[200]!),
               ),
-              child: Text(
-                _selectedLesson.audioScript,
-                style: const TextStyle(
-                  fontSize: 14,
-                  height: 1.5,
-                  color: Colors.black87,
-                ),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: segments.map((segment) {
+                  final timeMs = currentAudioTimestampMs;
+                  final timeSecStr = (timeMs / 1000).toStringAsFixed(1);
+
+                  return Padding(
+                    padding: const EdgeInsets.only(bottom: 10),
+                    child: Row(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Expanded(
+                          child: Text(
+                            segment,
+                            style: const TextStyle(
+                              fontSize: 14,
+                              height: 1.5,
+                              color: Colors.black87,
+                            ),
+                          ),
+                        ),
+                        const SizedBox(width: 8),
+                        NoteButton(
+                          title: segment,
+                          type: NoteType.sentence,
+                          source: NoteSource.listening,
+                          sourceRef: jsonEncode({
+                            'lesson_id': _selectedLesson.id,
+                            'lesson_title': _selectedLesson.title,
+                            'stage': _selectedLesson.stageNumber,
+                            'timestamp_ms': timeMs,
+                          }),
+                          content: 'Trích từ bài nghe "${_selectedLesson.title}" (Stage ${_selectedLesson.stageNumber})',
+                          userNote: 'Đoạn nghe tại thời điểm ${timeSecStr}s',
+                          tags: ['Listening', 'Stage ${_selectedLesson.stageNumber}', 'Transcript'],
+                          size: 19,
+                          showBorder: true,
+                          tooltip: 'Lưu câu vào Sổ tay',
+                        ),
+                      ],
+                    ),
+                  );
+                }).toList(),
               ),
             ),
           ),

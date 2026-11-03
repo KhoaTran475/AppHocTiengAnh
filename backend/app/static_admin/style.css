@@ -605,6 +605,16 @@ body {
   color: var(--success);
 }
 
+.status-badge.danger {
+  background: #fee2e2;
+  color: #ef4444;
+}
+
+.status-badge.warning {
+  background: #fef3c7;
+  color: #f59e0b;
+}
+
 .system-status-list strong {
   display: block;
   font-size: 13.5px;
@@ -2690,6 +2700,71 @@ input:focus, select:focus, textarea:focus {
   background: #f1f5f9;
   border-radius: 6px;
   color: #1e293b;
+}
+
+.pagination-btn-group {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.pagination-page-btn {
+  min-width: 32px;
+  height: 32px;
+  padding: 0 8px;
+  font-size: 13px;
+  font-weight: 600;
+  border: 1px solid #e2e8f0;
+  border-radius: 6px;
+  background: white;
+  color: #475569;
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  transition: all 0.15s ease;
+}
+
+.pagination-page-btn:hover:not(:disabled) {
+  background: #f1f5f9;
+  border-color: #cbd5e1;
+  color: #1e293b;
+}
+
+.pagination-page-btn.active {
+  background: #2563eb !important;
+  border-color: #2563eb !important;
+  color: white !important;
+  font-weight: 700;
+}
+
+.pagination-page-btn:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+  background: #f8fafc;
+}
+
+.pagination-size-wrap {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 13px;
+  color: #64748b;
+  margin-right: 12px;
+}
+
+.pagination-size-select {
+  padding: 4px 8px;
+  font-size: 12.5px;
+  border-radius: 6px;
+  border: 1px solid #cbd5e1;
+  background: white;
+  color: #1e293b;
+  cursor: pointer;
+  outline: none;
+}
+.pagination-size-select:focus {
+  border-color: #2563eb;
 }
 
 /* Detail Modal Styles */

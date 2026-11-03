@@ -15,8 +15,14 @@ const state = {
   selectedStageFilter: 'all',
   skillSearchTerm: '',
   lessons: [],
+  skillPage: 1,
+  skillPageSize: 6,
   mappings: [],
+  vocabPage: 1,
+  vocabPageSize: 15,
   users: [],
+  userPage: 1,
+  userPageSize: 10,
   selectedImportFile: null,
   activeQuestions: [], // Dùng trong modal soạn câu hỏi trắc nghiệm
   writingChartMode: 'none', // 'image' | 'data' | 'none'
@@ -139,6 +145,7 @@ function initEventListeners() {
       pill.classList.add('active');
       state.selectedSkill = pill.getAttribute('data-skill');
       state.selectedStageFilter = 'all';
+      state.skillPage = 1;
       updateStagePillsUI();
       loadSkillLessons();
     });
@@ -150,6 +157,7 @@ function initEventListeners() {
       document.querySelectorAll('.stage-pill').forEach(p => p.classList.remove('active'));
       pill.classList.add('active');
       state.selectedStageFilter = pill.getAttribute('data-stage');
+      state.skillPage = 1;
       renderSkillLessons();
     });
   });
@@ -157,6 +165,7 @@ function initEventListeners() {
   // Tab Skills: Search Box
   document.getElementById('skill-search-input').addEventListener('input', (e) => {
     state.skillSearchTerm = e.target.value.trim().toLowerCase();
+    state.skillPage = 1;
     renderSkillLessons();
   });
 
@@ -175,8 +184,14 @@ function initEventListeners() {
   initDropZone();
 
   // Tab Vocab Search & Filter
-  document.getElementById('vocab-search-input').addEventListener('input', renderVocabTable);
-  document.getElementById('vocab-band-filter').addEventListener('change', renderVocabTable);
+  document.getElementById('vocab-search-input').addEventListener('input', () => {
+    state.vocabPage = 1;
+    renderVocabTable();
+  });
+  document.getElementById('vocab-band-filter').addEventListener('change', () => {
+    state.vocabPage = 1;
+    renderVocabTable();
+  });
   document.getElementById('btn-reset-mappings').addEventListener('click', handleResetMappings);
 
   // Tab Users: Create User
@@ -211,10 +226,10 @@ function switchTab(tabId) {
   // Update Page Title
   const titles = {
     'tab-kpis': 'Tổng quan KPIs Hệ thống',
-    'tab-skills': 'Quản lý 4 Kỹ Năng & 5 Ải Vượt Bài IELTS',
-    'tab-vocab': 'Kho 82 Từ Vựng AI Nhận Diện Vật Thể',
-    'tab-vocab-config': 'Cấu Hình Động Học Từ Vựng & AI Qwen (Web Admin Portal)',
-    'tab-ai-grading': 'Lịch Sử Chấm Điểm & Giải Thích AI Qwen (3 Skills + Từ Vựng)',
+    'tab-skills': 'Quản Lý Kỹ Năng',
+    'tab-vocab': 'Kho Từ Vựng',
+    'tab-vocab-config': 'Cấu hình AI & Học Tập',
+    'tab-ai-grading': 'Lịch Sử Chấm Điểm',
     'tab-users': 'Quản lý Người Dùng & Phân Quyền (RBAC)',
   };
   document.getElementById('page-title').textContent = titles[tabId] || 'Quản trị viên';
@@ -292,10 +307,16 @@ async function loadAllData() {
 async function loadKPIS() {
   try {
     const data = await apiRequest('/admin/kpis');
-    document.getElementById('kpi-mappings').textContent = data.total_mappings || 82;
+    document.getElementById('kpi-mappings').textContent = data.total_mappings || 80;
     document.getElementById('kpi-learners').textContent = data.total_learners || 0;
     document.getElementById('kpi-users').textContent = data.total_users || 0;
     document.getElementById('kpi-notebook').textContent = data.total_notebook_items || 0;
+
+    const dbStatusBadge = document.getElementById('status-db');
+    if (dbStatusBadge) {
+      dbStatusBadge.className = 'status-badge success';
+      dbStatusBadge.innerHTML = '<i class="fa-solid fa-check"></i> Đã kết nối';
+    }
 
     // Render Band Bars
     const dist = data.band_distribution || {};
@@ -320,7 +341,128 @@ async function loadKPIS() {
     });
   } catch (e) {
     console.error('Lỗi tải KPIs:', e);
+    const dbStatusBadge = document.getElementById('status-db');
+    if (dbStatusBadge) {
+      dbStatusBadge.className = 'status-badge warning';
+      dbStatusBadge.innerHTML = '<i class="fa-solid fa-triangle-exclamation"></i> Kiểm tra kết nối';
+    }
   }
+}
+
+// ─────────────────────────────────────────────────────────────
+// PHÂN TRANG (PAGINATION HELPER REUSABLE)
+// ─────────────────────────────────────────────────────────────
+
+function getPaginationRange(currentPage, totalPages) {
+  if (totalPages <= 5) {
+    return Array.from({ length: totalPages }, (_, i) => i + 1);
+  }
+  const delta = 1;
+  const left = Math.max(2, currentPage - delta);
+  const right = Math.min(totalPages - 1, currentPage + delta);
+  const items = [1];
+  if (left > 2) {
+    items.push('...');
+  }
+  for (let i = left; i <= right; i++) {
+    items.push(i);
+  }
+  if (right < totalPages - 1) {
+    items.push('...');
+  }
+  items.push(totalPages);
+  return items;
+}
+
+function renderPaginationBar({
+  barId,
+  infoId,
+  actionsId,
+  currentPage,
+  pageSize,
+  totalItems,
+  pageSizeOptions = [10, 20, 50],
+  onPageChange,
+  onPageSizeChange,
+}) {
+  const bar = document.getElementById(barId);
+  const info = document.getElementById(infoId);
+  const actions = document.getElementById(actionsId);
+  if (!bar || !info || !actions) return;
+
+  if (totalItems === 0) {
+    bar.style.display = 'none';
+    return;
+  }
+  bar.style.display = 'flex';
+
+  const totalPages = Math.ceil(totalItems / pageSize) || 1;
+  const safePage = Math.min(Math.max(1, currentPage), totalPages);
+
+  const start = (safePage - 1) * pageSize + 1;
+  const end = Math.min(safePage * pageSize, totalItems);
+
+  info.innerHTML = `Hiển thị <strong>${start} - ${end}</strong> trong <strong>${totalItems.toLocaleString()}</strong> bản ghi (Trang <strong>${safePage}/${totalPages}</strong>)`;
+
+  const sizeSelectHtml = `
+    <div class="pagination-size-wrap">
+      <span>Dòng/trang:</span>
+      <select class="pagination-size-select" id="${barId}-size-select">
+        ${pageSizeOptions.map(opt => `<option value="${opt}" ${opt === pageSize ? 'selected' : ''}>${opt}</option>`).join('')}
+      </select>
+    </div>
+  `;
+
+  const prevDisabled = safePage <= 1 ? 'disabled' : '';
+  const nextDisabled = safePage >= totalPages ? 'disabled' : '';
+
+  const range = getPaginationRange(safePage, totalPages);
+  const pageBtnsHtml = range.map(p => {
+    if (p === '...') {
+      return `<span style="padding: 0 4px; color: var(--muted); font-size: 13px;">...</span>`;
+    }
+    const isActive = p === safePage ? 'active' : '';
+    return `<button class="pagination-page-btn ${isActive}" data-page="${p}">${p}</button>`;
+  }).join('');
+
+  actions.innerHTML = `
+    ${sizeSelectHtml}
+    <div class="pagination-btn-group">
+      <button class="pagination-page-btn" id="${barId}-btn-prev" ${prevDisabled} title="Trang trước">
+        <i class="fa-solid fa-chevron-left"></i>
+      </button>
+      ${pageBtnsHtml}
+      <button class="pagination-page-btn" id="${barId}-btn-next" ${nextDisabled} title="Trang sau">
+        <i class="fa-solid fa-chevron-right"></i>
+      </button>
+    </div>
+  `;
+
+  const sizeSelect = document.getElementById(`${barId}-size-select`);
+  if (sizeSelect && onPageSizeChange) {
+    sizeSelect.addEventListener('change', (e) => {
+      onPageSizeChange(parseInt(e.target.value, 10));
+    });
+  }
+
+  const prevBtn = document.getElementById(`${barId}-btn-prev`);
+  if (prevBtn && !prevDisabled && onPageChange) {
+    prevBtn.addEventListener('click', () => onPageChange(safePage - 1));
+  }
+
+  const nextBtn = document.getElementById(`${barId}-btn-next`);
+  if (nextBtn && !nextDisabled && onPageChange) {
+    nextBtn.addEventListener('click', () => onPageChange(safePage + 1));
+  }
+
+  actions.querySelectorAll('.pagination-page-btn[data-page]').forEach(btn => {
+    btn.addEventListener('click', () => {
+      const p = parseInt(btn.getAttribute('data-page'), 10);
+      if (p !== safePage && onPageChange) {
+        onPageChange(p);
+      }
+    });
+  });
 }
 
 // ─────────────────────────────────────────────────────────────
@@ -355,7 +497,10 @@ function renderSkillLessons() {
     );
   }
 
-  if (filtered.length === 0) {
+  const totalItems = filtered.length;
+  const pBar = document.getElementById('skills-pagination');
+
+  if (totalItems === 0) {
     container.innerHTML = `
       <div style="text-align: center; padding: 48px 20px; background: white; border-radius: 16px; border: 1px solid var(--border);">
         <i class="fa-solid fa-folder-open" style="font-size: 42px; color: #94a3b8; margin-bottom: 12px;"></i>
@@ -365,10 +510,22 @@ function renderSkillLessons() {
         </p>
       </div>
     `;
+    if (pBar) pBar.style.display = 'none';
     return;
   }
 
-  container.innerHTML = filtered.map(l => {
+  const totalPages = Math.ceil(totalItems / state.skillPageSize) || 1;
+  if (state.skillPage > totalPages) {
+    state.skillPage = totalPages;
+  }
+  if (state.skillPage < 1) {
+    state.skillPage = 1;
+  }
+
+  const startIdx = (state.skillPage - 1) * state.skillPageSize;
+  const pageItems = filtered.slice(startIdx, startIdx + state.skillPageSize);
+
+  container.innerHTML = pageItems.map(l => {
     const stageNum = l.stage_number || 1;
     const targetBand = l.target_band || l.band_score_target || '7.0';
     const passCond = l.pass_condition || {};
@@ -428,6 +585,26 @@ function renderSkillLessons() {
       </div>
     `;
   }).join('');
+
+  renderPaginationBar({
+    barId: 'skills-pagination',
+    infoId: 'skills-pagination-info',
+    actionsId: 'skills-pagination-actions',
+    currentPage: state.skillPage,
+    pageSize: state.skillPageSize,
+    totalItems: totalItems,
+    pageSizeOptions: [6, 12, 24],
+    onPageChange: (newPage) => {
+      state.skillPage = newPage;
+      renderSkillLessons();
+      container.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    },
+    onPageSizeChange: (newSize) => {
+      state.skillPageSize = newSize;
+      state.skillPage = 1;
+      renderSkillLessons();
+    }
+  });
 }
 
 // ─────────────────────────────────────────────────────────────
@@ -1282,7 +1459,27 @@ function renderVocabTable() {
     );
   }
 
-  tbody.innerHTML = filtered.map(m => `
+  const totalItems = filtered.length;
+  const pBar = document.getElementById('vocab-pagination');
+
+  if (totalItems === 0) {
+    tbody.innerHTML = `<tr><td colspan="7" class="text-center py-4" style="color: var(--muted);">Không tìm thấy từ vựng phù hợp</td></tr>`;
+    if (pBar) pBar.style.display = 'none';
+    return;
+  }
+
+  const totalPages = Math.ceil(totalItems / state.vocabPageSize) || 1;
+  if (state.vocabPage > totalPages) {
+    state.vocabPage = totalPages;
+  }
+  if (state.vocabPage < 1) {
+    state.vocabPage = 1;
+  }
+
+  const startIdx = (state.vocabPage - 1) * state.vocabPageSize;
+  const pageItems = filtered.slice(startIdx, startIdx + state.vocabPageSize);
+
+  tbody.innerHTML = pageItems.map(m => `
     <tr>
       <td>#${m.id}</td>
       <td><strong><code>${escapeHtml(m.label || '')}</code></strong></td>
@@ -1300,6 +1497,25 @@ function renderVocabTable() {
       </td>
     </tr>
   `).join('');
+
+  renderPaginationBar({
+    barId: 'vocab-pagination',
+    infoId: 'vocab-pagination-info',
+    actionsId: 'vocab-pagination-actions',
+    currentPage: state.vocabPage,
+    pageSize: state.vocabPageSize,
+    totalItems: totalItems,
+    pageSizeOptions: [15, 30, 50, 100],
+    onPageChange: (newPage) => {
+      state.vocabPage = newPage;
+      renderVocabTable();
+    },
+    onPageSizeChange: (newSize) => {
+      state.vocabPageSize = newSize;
+      state.vocabPage = 1;
+      renderVocabTable();
+    }
+  });
 }
 
 function speakWord(word) {
@@ -1344,7 +1560,27 @@ async function loadUsers() {
 
 function renderUsersTable() {
   const tbody = document.getElementById('users-table-body');
-  tbody.innerHTML = state.users.map(u => {
+  const totalItems = state.users.length;
+  const pBar = document.getElementById('users-pagination');
+
+  if (totalItems === 0) {
+    tbody.innerHTML = `<tr><td colspan="6" class="text-center py-4" style="color: var(--muted);">Chưa có tài khoản nào trong hệ thống</td></tr>`;
+    if (pBar) pBar.style.display = 'none';
+    return;
+  }
+
+  const totalPages = Math.ceil(totalItems / state.userPageSize) || 1;
+  if (state.userPage > totalPages) {
+    state.userPage = totalPages;
+  }
+  if (state.userPage < 1) {
+    state.userPage = 1;
+  }
+
+  const startIdx = (state.userPage - 1) * state.userPageSize;
+  const pageItems = state.users.slice(startIdx, startIdx + state.userPageSize);
+
+  tbody.innerHTML = pageItems.map(u => {
     const isCurrent = state.user && state.user.id === u.id;
     const isAdmin = u.role === 'admin';
     const dateStr = u.created_at ? u.created_at.substring(0, 10) : 'N/A';
@@ -1379,6 +1615,25 @@ function renderUsersTable() {
       </tr>
     `;
   }).join('');
+
+  renderPaginationBar({
+    barId: 'users-pagination',
+    infoId: 'users-pagination-info',
+    actionsId: 'users-pagination-actions',
+    currentPage: state.userPage,
+    pageSize: state.userPageSize,
+    totalItems: totalItems,
+    pageSizeOptions: [10, 20, 50],
+    onPageChange: (newPage) => {
+      state.userPage = newPage;
+      renderUsersTable();
+    },
+    onPageSizeChange: (newSize) => {
+      state.userPageSize = newSize;
+      state.userPage = 1;
+      renderUsersTable();
+    }
+  });
 }
 
 async function handleCreateUser(e) {
@@ -1626,6 +1881,7 @@ function updateQuizRulePreview() {
 async function checkSystemStatus() {
   // 1. Kiểm tra Backend :8000 qua /api/health
   const backendChip = document.getElementById('topbar-backend-status');
+  const fastapiBadge = document.getElementById('status-fastapi');
   try {
     const res = await fetch(`${window.location.origin}/api/health`, { method: 'GET', cache: 'no-cache' });
     if (res.ok) {
@@ -1633,6 +1889,10 @@ async function checkSystemStatus() {
       if (backendChip) {
         backendChip.className = 'status-chip online';
         backendChip.innerHTML = '<span class="status-dot-pulse green"></span><span class="chip-text">Backend Online (:8000)</span>';
+      }
+      if (fastapiBadge) {
+        fastapiBadge.className = 'status-badge success';
+        fastapiBadge.innerHTML = '<i class="fa-solid fa-check"></i> Hoạt động';
       }
     } else {
       throw new Error(`HTTP ${res.status}`);
@@ -1647,6 +1907,10 @@ async function checkSystemStatus() {
           backendChip.className = 'status-chip online';
           backendChip.innerHTML = '<span class="status-dot-pulse green"></span><span class="chip-text">Backend Online (:8000)</span>';
         }
+        if (fastapiBadge) {
+          fastapiBadge.className = 'status-badge success';
+          fastapiBadge.innerHTML = '<i class="fa-solid fa-check"></i> Hoạt động';
+        }
       } else {
         throw new Error();
       }
@@ -1655,6 +1919,10 @@ async function checkSystemStatus() {
       if (backendChip) {
         backendChip.className = 'status-chip offline';
         backendChip.innerHTML = '<span class="status-dot-pulse red"></span><span class="chip-text">Backend Offline</span>';
+      }
+      if (fastapiBadge) {
+        fastapiBadge.className = 'status-badge danger';
+        fastapiBadge.innerHTML = '<i class="fa-solid fa-xmark"></i> Gián đoạn';
       }
     }
   }
@@ -1753,6 +2021,27 @@ async function fetchOllamaTags(showToastOnManual = false) {
       if (modelHint) {
         modelHint.innerHTML = `<span class="text-danger"><i class="fa-solid fa-triangle-exclamation"></i> Không thể kết nối Ollama tại port 11434. Vui lòng bật Ollama Desktop.</span>`;
       }
+    }
+  }
+
+  // Cập nhật Card Trạng thái Kiến Trúc Ollama ở trang KPIs
+  const ollamaCardBadge = document.getElementById('status-ollama-card');
+  const ollamaCardDesc = document.getElementById('status-ollama-desc');
+  if (ollamaCardBadge) {
+    if (isOnline) {
+      ollamaCardBadge.className = 'status-badge success';
+      ollamaCardBadge.innerHTML = `<i class="fa-solid fa-check"></i> Sẵn sàng (${models.length} models)`;
+    } else {
+      ollamaCardBadge.className = 'status-badge danger';
+      ollamaCardBadge.innerHTML = '<i class="fa-solid fa-xmark"></i> Ngoại tuyến';
+    }
+  }
+  if (ollamaCardDesc) {
+    if (isOnline) {
+      const activeModel = models.length > 0 ? ` [${models.slice(0, 3).join(', ')}]` : '';
+      ollamaCardDesc.textContent = `Qwen 2.5 7B chấm điểm Writing 4 tiêu chí, giải thích Reading / Listening${activeModel}`;
+    } else {
+      ollamaCardDesc.textContent = 'Chưa bật Ollama local (:11434) hoặc không tìm thấy model Qwen';
     }
   }
 
@@ -2697,25 +2986,24 @@ function updateBulkDeleteUI() {
 }
 
 function updateAiGradingPaginationUI() {
-  const bar = document.getElementById('ai-logs-pagination');
-  const info = document.getElementById('ai-logs-pagination-info');
-  const pageNum = document.getElementById('ai-logs-current-page-num');
-  const prevBtn = document.getElementById('btn-ai-logs-prev');
-  const nextBtn = document.getElementById('btn-ai-logs-next');
-
-  if (!bar || !info) return;
-
-  if (state.aiLogTotal === 0) {
-    bar.style.display = 'none';
-    return;
-  }
-
-  bar.style.display = 'flex';
-  info.textContent = `Hiển thị trang ${state.aiLogPage} / ${state.aiLogTotalPages} (Tổng cộng ${state.aiLogTotal.toLocaleString()} lượt chấm)`;
-  pageNum.textContent = state.aiLogPage;
-
-  if (prevBtn) prevBtn.disabled = state.aiLogPage <= 1;
-  if (nextBtn) nextBtn.disabled = state.aiLogPage >= state.aiLogTotalPages;
+  renderPaginationBar({
+    barId: 'ai-logs-pagination',
+    infoId: 'ai-logs-pagination-info',
+    actionsId: 'ai-logs-pagination-actions',
+    currentPage: state.aiLogPage,
+    pageSize: state.aiLogPageSize,
+    totalItems: state.aiLogTotal,
+    pageSizeOptions: [10, 20, 50, 100],
+    onPageChange: (newPage) => {
+      state.aiLogPage = newPage;
+      loadAiGradingLogs();
+    },
+    onPageSizeChange: (newSize) => {
+      state.aiLogPageSize = newSize;
+      state.aiLogPage = 1;
+      loadAiGradingLogs();
+    }
+  });
 }
 
 // ─────────────────────────────────────────────────────────────

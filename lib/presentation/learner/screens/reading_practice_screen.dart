@@ -8,10 +8,13 @@ import '../../../core/services/skill_progress_service.dart';
 import '../../../core/theme/app_theme.dart';
 import '../../../data/models/skill_models.dart';
 import '../../../data/models/vocabulary_item_model.dart';
+import '../../../data/models/note_model.dart';
 import '../../../data/repositories/skill_repository.dart';
+import '../../../data/repositories/note_repository.dart';
 import '../../../data/datasources/api_service.dart';
 import '../../auth/providers/auth_provider.dart';
 import '../widgets/ai_explanation_bottom_sheet.dart';
+import '../widgets/quick_note_fab.dart';
 
 /// Màn hình Luyện thi IELTS Reading Chuyên sâu theo cơ chế Vượt ải (Gamified Stages).
 /// Tính năng:
@@ -478,11 +481,26 @@ class _ReadingPracticeScreenState extends State<ReadingPracticeScreen> {
   }
 
   /// Tra từ tại chỗ khi học viên chạm vào từ vựng bất kỳ trong bài đọc
-  Future<void> _handleWordTap(String word) async {
+  Future<void> _handleWordTap(String word, {String? paragraphText}) async {
     final cleanWord = word.replaceAll(RegExp(r'[^\w\s]'), '').trim().toLowerCase();
     if (cleanWord.isEmpty) return;
 
     if (!mounted) return;
+
+    // Tự động cắt câu hoàn chỉnh từ dấu chấm/chấm than/chấm hỏi chứa từ này
+    String containingSentence = '';
+    if (paragraphText != null && paragraphText.isNotEmpty) {
+      final sentences = paragraphText.split(RegExp(r'(?<=[.!?])\s+'));
+      for (final s in sentences) {
+        if (s.toLowerCase().contains(cleanWord)) {
+          containingSentence = s.trim();
+          break;
+        }
+      }
+      if (containingSentence.isEmpty) {
+        containingSentence = paragraphText.trim();
+      }
+    }
 
     showModalBottomSheet(
       context: context,
@@ -491,6 +509,8 @@ class _ReadingPracticeScreenState extends State<ReadingPracticeScreen> {
       builder: (ctx) => _WordLookupSheet(
         word: cleanWord,
         flutterTts: _flutterTts,
+        containingSentence: containingSentence,
+        lessonTitle: _selectedPassage.title,
       ),
     );
   }
@@ -554,6 +574,20 @@ class _ReadingPracticeScreenState extends State<ReadingPracticeScreen> {
             _buildPassageView(),
             _buildQuestionsView(),
           ],
+        ),
+        floatingActionButton: QuickNoteFab(
+          source: NoteSource.reading,
+          sourceRef: NoteSourceRef.encode(
+            screen: NoteSource.reading,
+            lessonId: _selectedPassage.id,
+            stageNumber: _selectedPassage.stageNumber,
+            title: _selectedPassage.title,
+            subtitle: 'Ải ${_selectedPassage.stageNumber} • Band ${_selectedPassage.bandScoreTarget}',
+          ),
+          initialTags: ['reading', 'stage_${_selectedPassage.stageNumber}'],
+          backgroundColor: Colors.teal,
+          heroTag: 'fab_reading_quick_note',
+          tooltip: 'Ghi chú Reading',
         ),
       ),
     );
@@ -695,7 +729,7 @@ class _ReadingPracticeScreenState extends State<ReadingPracticeScreen> {
                     runSpacing: 4,
                     children: pText.split(' ').map((word) {
                       return InkWell(
-                        onTap: () => _handleWordTap(word),
+                        onTap: () => _handleWordTap(word, paragraphText: pText),
                         borderRadius: BorderRadius.circular(4),
                         child: Padding(
                           padding: const EdgeInsets.symmetric(
@@ -716,6 +750,7 @@ class _ReadingPracticeScreenState extends State<ReadingPracticeScreen> {
               ),
             );
           }),
+          const SizedBox(height: 72),
         ],
       ),
     );
@@ -917,6 +952,7 @@ class _ReadingPracticeScreenState extends State<ReadingPracticeScreen> {
                             questionText: q.questionText,
                             correctAnswer: q.correctAnswer,
                             initialExplanation: q.explanation,
+                            skillType: NoteSource.reading,
                           );
                         },
                         icon: const Icon(Icons.psychology_rounded, size: 18, color: Colors.indigo),
@@ -967,7 +1003,7 @@ class _ReadingPracticeScreenState extends State<ReadingPracticeScreen> {
               ),
             ),
           ),
-          const SizedBox(height: 24),
+          const SizedBox(height: 80),
         ],
       ),
     );
@@ -1289,14 +1325,18 @@ class _ReadingPracticeScreenState extends State<ReadingPracticeScreen> {
   }
 }
 
-/// Bottom Sheet tra từ vựng chuyên sâu (Hiển thị IPA + Nghĩa tiếng Việt + Lưu vào Sổ tay)
+/// Bottom Sheet tra từ vựng chuyên sâu (Hiển thị IPA + Nghĩa tiếng Việt + Lưu Từ & Lưu Câu vào Sổ tay)
 class _WordLookupSheet extends StatefulWidget {
   final String word;
   final FlutterTts flutterTts;
+  final String containingSentence;
+  final String lessonTitle;
 
   const _WordLookupSheet({
     required this.word,
     required this.flutterTts,
+    this.containingSentence = '',
+    this.lessonTitle = '',
   });
 
   @override
@@ -1305,30 +1345,44 @@ class _WordLookupSheet extends StatefulWidget {
 
 class _WordLookupSheetState extends State<_WordLookupSheet> {
   late Future<DictionaryEntry> _lookupFuture;
-  bool _isSaved = false;
+  bool _isWordSaved = false;
+  bool _isSentenceSaved = false;
 
   @override
   void initState() {
     super.initState();
     _lookupFuture = _resolveWordDetails();
-    _checkSavedStatus();
+    _checkSavedStatuses();
     widget.flutterTts.speak(widget.word);
   }
 
-  Future<void> _checkSavedStatus() async {
+  Future<void> _checkSavedStatuses() async {
     final user = context.read<AuthProvider>().currentUser;
     final userId = user?.id ?? 1;
-    final isSavedLocal = await DatabaseHelper.instance.isWordSaved(userId, widget.word.toLowerCase().trim());
-    if (isSavedLocal && mounted) {
-      setState(() => _isSaved = true);
-      return;
+
+    // Kiểm tra từ vựng
+    final isWordSaved = await NoteRepository.instance.isSaved(
+      userId,
+      widget.word.toLowerCase().trim(),
+      type: NoteType.vocab,
+    );
+
+    // Kiểm tra câu chứa từ (nếu có)
+    bool isSentenceSaved = false;
+    if (widget.containingSentence.isNotEmpty) {
+      isSentenceSaved = await NoteRepository.instance.isSaved(
+        userId,
+        widget.containingSentence.trim(),
+        type: NoteType.sentence,
+      );
     }
-    try {
-      final isSavedApi = await ApiService.instance.checkWordSaved(widget.word.toLowerCase().trim());
-      if (isSavedApi && mounted) {
-        setState(() => _isSaved = true);
-      }
-    } catch (_) {}
+
+    if (mounted) {
+      setState(() {
+        _isWordSaved = isWordSaved;
+        _isSentenceSaved = isSentenceSaved;
+      });
+    }
   }
 
   Future<DictionaryEntry> _resolveWordDetails() async {
@@ -1347,7 +1401,8 @@ class _WordLookupSheetState extends State<_WordLookupSheet> {
     return await DictionaryService.lookup(widget.word);
   }
 
-  Future<void> _saveToNotebook(DictionaryEntry entry) async {
+  /// Tùy chọn 1: Lưu từ vựng vào Sổ tay
+  Future<void> _saveWordToNotebook(DictionaryEntry entry) async {
     final user = context.read<AuthProvider>().currentUser;
     final userId = user?.id ?? 1;
 
@@ -1358,33 +1413,79 @@ class _WordLookupSheetState extends State<_WordLookupSheet> {
       ipa: entry.ipa.trim().isNotEmpty ? entry.ipa.trim() : '/${entry.word.trim()}/',
       translation: entry.vietnameseMeaning.trim(),
       bandScore: entry.bandScore ?? '7.5',
-      example: entry.example ?? 'Từ vựng học thuật trong bài đọc IELTS.',
+      example: entry.example ?? (widget.containingSentence.isNotEmpty ? widget.containingSentence : 'Từ vựng học thuật trong bài đọc IELTS.'),
       createdAt: DateTime.now().toIso8601String(),
     );
 
-    // 1. Lưu vào SQLite cục bộ và tự động sync lên Supabase
-    await DatabaseHelper.instance.insertNotebookItem(item, username: user?.username);
-
-    // 2. Đồng bộ lên Backend FastAPI
-    try {
-      await ApiService.instance.saveToNotebook(item);
-    } catch (_) {}
+    await NoteRepository.instance.saveQuickNote(
+      userId: userId,
+      type: NoteType.vocab,
+      source: NoteSource.reading,
+      sourceRef: NoteSourceRef.encode(
+        screen: NoteSource.reading,
+        title: widget.lessonTitle.isNotEmpty ? widget.lessonTitle : 'Reading Practice',
+      ),
+      title: entry.word.trim(),
+      content: entry.vietnameseMeaning.trim(),
+      userNote: widget.containingSentence.isNotEmpty ? 'Ví dụ: "${widget.containingSentence}"' : null,
+      tags: ['Reading', 'Band ${entry.bandScore ?? "7.5"}'],
+      vocabData: item,
+      username: user?.username,
+    );
 
     setState(() {
-      _isSaved = true;
+      _isWordSaved = true;
     });
 
     if (mounted) {
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
-          content: Text('✅ Đã lưu "${entry.word}" vào Sổ tay từ vựng!'),
-          backgroundColor: Colors.green[700],
+          content: Text('✅ Đã lưu từ "${entry.word}" vào Sổ tay!'),
+          backgroundColor: const Color(0xFF10B981),
           duration: const Duration(seconds: 2),
+          behavior: SnackBarBehavior.floating,
         ),
       );
     }
   }
 
+  /// Tùy chọn 2: Lưu cả câu chứa từ vào Sổ tay
+  Future<void> _saveSentenceToNotebook(DictionaryEntry entry) async {
+    if (widget.containingSentence.trim().isEmpty) return;
+
+    final user = context.read<AuthProvider>().currentUser;
+    final userId = user?.id ?? 1;
+
+    await NoteRepository.instance.saveQuickNote(
+      userId: userId,
+      type: NoteType.sentence,
+      source: NoteSource.reading,
+      sourceRef: NoteSourceRef.encode(
+        screen: NoteSource.reading,
+        title: widget.lessonTitle.isNotEmpty ? widget.lessonTitle : 'Reading Practice',
+      ),
+      title: widget.containingSentence.trim(),
+      content: 'Chứa từ khóa: "${entry.word}" (${entry.vietnameseMeaning})',
+      userNote: 'Nghĩa từ vựng liên quan: ${entry.word} - ${entry.vietnameseMeaning}',
+      tags: ['Reading', 'IELTS Sentence'],
+      username: user?.username,
+    );
+
+    setState(() {
+      _isSentenceSaved = true;
+    });
+
+    if (mounted) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('✅ Đã lưu câu chứa từ vào Sổ tay!'),
+          backgroundColor: Color(0xFF3B82F6),
+          duration: Duration(seconds: 2),
+          behavior: SnackBarBehavior.floating,
+        ),
+      );
+    }
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -1449,235 +1550,283 @@ class _WordLookupSheetState extends State<_WordLookupSheet> {
                 vietnameseMeaning: widget.word,
               );
 
-          return Column(
-            mainAxisSize: MainAxisSize.min,
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Center(
-                child: Container(
-                  width: 40,
-                  height: 4,
-                  margin: const EdgeInsets.only(bottom: 12),
-                  decoration: BoxDecoration(
-                    color: Colors.grey[300],
-                    borderRadius: BorderRadius.circular(2),
+          return SingleChildScrollView(
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Center(
+                  child: Container(
+                    width: 40,
+                    height: 4,
+                    margin: const EdgeInsets.only(bottom: 12),
+                    decoration: BoxDecoration(
+                      color: Colors.grey[300],
+                      borderRadius: BorderRadius.circular(2),
+                    ),
                   ),
                 ),
-              ),
-              Row(
-                children: [
-                  Expanded(
-                    child: Text(
-                      widget.word.toUpperCase(),
-                      style: const TextStyle(
-                        fontSize: 22,
-                        fontWeight: FontWeight.w800,
-                        color: AppColors.navy,
-                        letterSpacing: 0.5,
-                      ),
-                    ),
-                  ),
-                  InkWell(
-                    onTap: () => widget.flutterTts.speak(widget.word),
-                    borderRadius: BorderRadius.circular(24),
-                    child: Container(
-                      padding: const EdgeInsets.all(8),
-                      decoration: BoxDecoration(
-                        color: AppColors.primary.withValues(alpha: 0.1),
-                        shape: BoxShape.circle,
-                      ),
-                      child: const Icon(
-                        Icons.volume_up_rounded,
-                        color: AppColors.primary,
-                        size: 26,
-                      ),
-                    ),
-                  ),
-                ],
-              ),
-              const SizedBox(height: 8),
-
-              // Badges: IPA + Loại từ + Band target
-              Wrap(
-                spacing: 8,
-                runSpacing: 6,
-                children: [
-                  Container(
-                    padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
-                    decoration: BoxDecoration(
-                      color: const Color(0xFF1E88E5).withValues(alpha: 0.1),
-                      borderRadius: BorderRadius.circular(8),
-                      border: Border.all(color: const Color(0xFF1E88E5).withValues(alpha: 0.3)),
-                    ),
-                    child: Text(
-                      entry.ipa,
-                      style: const TextStyle(
-                        fontSize: 15,
-                        fontWeight: FontWeight.w600,
-                        fontStyle: FontStyle.italic,
-                        color: Color(0xFF1565C0),
-                      ),
-                    ),
-                  ),
-                  Container(
-                    padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-                    decoration: BoxDecoration(
-                      color: Colors.grey[100],
-                      borderRadius: BorderRadius.circular(8),
-                    ),
-                    child: Text(
-                      entry.partOfSpeech,
-                      style: TextStyle(
-                        fontSize: 12,
-                        fontWeight: FontWeight.bold,
-                        color: Colors.grey[700],
-                      ),
-                    ),
-                  ),
-                  if (entry.bandScore != null)
-                    Container(
-                      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-                      decoration: BoxDecoration(
-                        color: Colors.orange.withValues(alpha: 0.1),
-                        borderRadius: BorderRadius.circular(8),
-                      ),
-                      child: Text(
-                        'Band ${entry.bandScore}',
-                        style: const TextStyle(
-                          fontSize: 12,
-                          fontWeight: FontWeight.bold,
-                          color: Colors.deepOrange,
-                        ),
-                      ),
-                    ),
-                ],
-              ),
-              const Divider(height: 24),
-
-              // Khung hiển thị Nghĩa tiếng Việt
-              Container(
-                width: double.infinity,
-                padding: const EdgeInsets.all(14),
-                decoration: BoxDecoration(
-                  color: const Color(0xFFFFF5F5),
-                  borderRadius: BorderRadius.circular(12),
-                  border: Border.all(color: const Color(0xFFFFCDD2)),
-                ),
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
+                Row(
                   children: [
-                    const Row(
-                      children: [
-                        Text('🇻🇳 ', style: TextStyle(fontSize: 15)),
-                        Text(
-                          'NGHĨA TIẾNG VIỆT',
-                          style: TextStyle(
-                            fontSize: 12,
-                            fontWeight: FontWeight.bold,
-                            letterSpacing: 0.8,
-                            color: Color(0xFFC62828),
-                          ),
+                    Expanded(
+                      child: Text(
+                        widget.word.toUpperCase(),
+                        style: const TextStyle(
+                          fontSize: 22,
+                          fontWeight: FontWeight.w800,
+                          color: AppColors.navy,
+                          letterSpacing: 0.5,
                         ),
-                      ],
+                      ),
                     ),
-                    const SizedBox(height: 6),
-                    Text(
-                      entry.vietnameseMeaning,
-                      style: const TextStyle(
-                        fontSize: 17,
-                        fontWeight: FontWeight.w700,
-                        color: Color(0xFFB71C1C),
-                        height: 1.3,
+                    InkWell(
+                      onTap: () => widget.flutterTts.speak(widget.word),
+                      borderRadius: BorderRadius.circular(24),
+                      child: Container(
+                        padding: const EdgeInsets.all(8),
+                        decoration: BoxDecoration(
+                          color: AppColors.primary.withValues(alpha: 0.1),
+                          shape: BoxShape.circle,
+                        ),
+                        child: const Icon(
+                          Icons.volume_up_rounded,
+                          color: AppColors.primary,
+                          size: 26,
+                        ),
                       ),
                     ),
                   ],
                 ),
-              ),
+                const SizedBox(height: 8),
 
-              if (entry.example != null && entry.example!.isNotEmpty) ...[
-                const SizedBox(height: 12),
+                // Badges: IPA + Loại từ + Band target
+                Wrap(
+                  spacing: 8,
+                  runSpacing: 6,
+                  children: [
+                    Container(
+                      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+                      decoration: BoxDecoration(
+                        color: const Color(0xFF1E88E5).withValues(alpha: 0.1),
+                        borderRadius: BorderRadius.circular(8),
+                        border: Border.all(color: const Color(0xFF1E88E5).withValues(alpha: 0.3)),
+                      ),
+                      child: Text(
+                        entry.ipa,
+                        style: const TextStyle(
+                          fontSize: 15,
+                          fontWeight: FontWeight.w600,
+                          fontStyle: FontStyle.italic,
+                          color: Color(0xFF1565C0),
+                        ),
+                      ),
+                    ),
+                    Container(
+                      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                      decoration: BoxDecoration(
+                        color: Colors.grey[100],
+                        borderRadius: BorderRadius.circular(8),
+                      ),
+                      child: Text(
+                        entry.partOfSpeech,
+                        style: TextStyle(
+                          fontSize: 12,
+                          fontWeight: FontWeight.bold,
+                          color: Colors.grey[700],
+                        ),
+                      ),
+                    ),
+                    if (entry.bandScore != null)
+                      Container(
+                        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                        decoration: BoxDecoration(
+                          color: Colors.orange.withValues(alpha: 0.1),
+                          borderRadius: BorderRadius.circular(8),
+                        ),
+                        child: Text(
+                          'Band ${entry.bandScore}',
+                          style: const TextStyle(
+                            fontSize: 12,
+                            fontWeight: FontWeight.bold,
+                            color: Colors.deepOrange,
+                          ),
+                        ),
+                      ),
+                  ],
+                ),
+                const Divider(height: 24),
+
+                // Khung hiển thị Nghĩa tiếng Việt
                 Container(
                   width: double.infinity,
-                  padding: const EdgeInsets.all(12),
+                  padding: const EdgeInsets.all(14),
                   decoration: BoxDecoration(
-                    color: Colors.grey[50],
-                    borderRadius: BorderRadius.circular(10),
-                    border: Border.all(color: Colors.grey[200]!),
+                    color: const Color(0xFFFFF5F5),
+                    borderRadius: BorderRadius.circular(12),
+                    border: Border.all(color: const Color(0xFFFFCDD2)),
                   ),
-                  child: Row(
+                  child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
-                      const Icon(Icons.format_quote_rounded, size: 18, color: Colors.grey),
-                      const SizedBox(width: 6),
-                      Expanded(
-                        child: Text(
-                          entry.example!,
-                          style: TextStyle(
-                            fontSize: 13,
-                            fontStyle: FontStyle.italic,
-                            color: Colors.grey[800],
+                      const Row(
+                        children: [
+                          Text('🇻🇳 ', style: TextStyle(fontSize: 15)),
+                          Text(
+                            'NGHĨA TIẾNG VIỆT',
+                            style: TextStyle(
+                              fontSize: 12,
+                              fontWeight: FontWeight.bold,
+                              letterSpacing: 0.8,
+                              color: Color(0xFFC62828),
+                            ),
                           ),
+                        ],
+                      ),
+                      const SizedBox(height: 6),
+                      Text(
+                        entry.vietnameseMeaning,
+                        style: const TextStyle(
+                          fontSize: 17,
+                          fontWeight: FontWeight.w700,
+                          color: Color(0xFFB71C1C),
+                          height: 1.3,
                         ),
                       ),
                     ],
                   ),
                 ),
-              ],
 
-              const SizedBox(height: 16),
-
-              // Hai nút hành động: Lưu sổ tay & Đóng
-              Row(
-                children: [
-                  Expanded(
-                    child: OutlinedButton.icon(
-                      onPressed: _isSaved ? null : () => _saveToNotebook(entry),
-                      icon: Icon(
-                        _isSaved ? Icons.check_circle_rounded : Icons.bookmark_add_rounded,
-                        color: _isSaved ? Colors.green : AppColors.primary,
-                        size: 20,
-                      ),
-                      label: Text(
-                        _isSaved ? 'Đã lưu sổ tay' : 'Lưu vào sổ tay',
-                        style: TextStyle(
-                          fontWeight: FontWeight.bold,
-                          color: _isSaved ? Colors.green : AppColors.primary,
-                        ),
-                      ),
-                      style: OutlinedButton.styleFrom(
-                        padding: const EdgeInsets.symmetric(vertical: 12),
-                        side: BorderSide(
-                          color: _isSaved ? Colors.green : AppColors.primary,
-                        ),
-                        shape: RoundedRectangleBorder(
-                          borderRadius: BorderRadius.circular(10),
-                        ),
-                      ),
+                // Khung hiển thị câu ngữ cảnh nếu có
+                if (widget.containingSentence.isNotEmpty) ...[
+                  const SizedBox(height: 12),
+                  Container(
+                    width: double.infinity,
+                    padding: const EdgeInsets.all(12),
+                    decoration: BoxDecoration(
+                      color: const Color(0xFFEFF6FF),
+                      borderRadius: BorderRadius.circular(10),
+                      border: Border.all(color: const Color(0xFFBFDBFE)),
                     ),
-                  ),
-                  const SizedBox(width: 12),
-                  Expanded(
-                    child: ElevatedButton(
-                      onPressed: () => Navigator.pop(context),
-                      style: ElevatedButton.styleFrom(
-                        backgroundColor: AppColors.primary,
-                        padding: const EdgeInsets.symmetric(vertical: 12),
-                        shape: RoundedRectangleBorder(
-                          borderRadius: BorderRadius.circular(10),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        const Row(
+                          children: [
+                            Icon(Icons.format_quote_rounded, size: 16, color: Color(0xFF2563EB)),
+                            SizedBox(width: 4),
+                            Text(
+                              'CÂU CHỨA TỪ TRONG BÀI ĐỌC',
+                              style: TextStyle(
+                                fontSize: 11,
+                                fontWeight: FontWeight.bold,
+                                color: Color(0xFF1D4ED8),
+                                letterSpacing: 0.5,
+                              ),
+                            ),
+                          ],
                         ),
-                      ),
-                      child: const Text(
-                        'ĐÓNG',
-                        style: TextStyle(
-                          color: Colors.white,
-                          fontWeight: FontWeight.bold,
+                        const SizedBox(height: 6),
+                        Text(
+                          '"${widget.containingSentence}"',
+                          style: const TextStyle(
+                            fontSize: 13.5,
+                            fontStyle: FontStyle.italic,
+                            color: Color(0xFF1E3A8A),
+                            height: 1.4,
+                          ),
                         ),
-                      ),
+                      ],
                     ),
                   ),
                 ],
-              ),
-            ],
+
+                const SizedBox(height: 16),
+
+                // ── BỔ SUNG 2 TÙY CHỌN LƯU VÀO SỔ TAY ──
+                Row(
+                  children: [
+                    // Tùy chọn 1: Lưu từ vựng
+                    Expanded(
+                      child: OutlinedButton.icon(
+                        onPressed: _isWordSaved ? null : () => _saveWordToNotebook(entry),
+                        icon: Icon(
+                          _isWordSaved ? Icons.check_circle_rounded : Icons.bookmark_add_rounded,
+                          color: _isWordSaved ? const Color(0xFF10B981) : AppColors.primary,
+                          size: 18,
+                        ),
+                        label: Text(
+                          _isWordSaved ? 'Đã lưu từ' : 'Lưu từ vựng',
+                          style: TextStyle(
+                            fontSize: 13,
+                            fontWeight: FontWeight.bold,
+                            color: _isWordSaved ? const Color(0xFF10B981) : AppColors.primary,
+                          ),
+                        ),
+                        style: OutlinedButton.styleFrom(
+                          padding: const EdgeInsets.symmetric(vertical: 12),
+                          side: BorderSide(
+                            color: _isWordSaved ? const Color(0xFF10B981) : AppColors.primary,
+                          ),
+                          shape: RoundedRectangleBorder(
+                            borderRadius: BorderRadius.circular(10),
+                          ),
+                        ),
+                      ),
+                    ),
+                    const SizedBox(width: 10),
+
+                    // Tùy chọn 2: Lưu cả câu chứa từ
+                    if (widget.containingSentence.isNotEmpty)
+                      Expanded(
+                        child: OutlinedButton.icon(
+                          onPressed: _isSentenceSaved ? null : () => _saveSentenceToNotebook(entry),
+                          icon: Icon(
+                            _isSentenceSaved ? Icons.check_circle_rounded : Icons.format_quote_rounded,
+                            color: _isSentenceSaved ? const Color(0xFF3B82F6) : const Color(0xFF2563EB),
+                            size: 18,
+                          ),
+                          label: Text(
+                            _isSentenceSaved ? 'Đã lưu câu' : 'Lưu cả câu',
+                            style: TextStyle(
+                              fontSize: 13,
+                              fontWeight: FontWeight.bold,
+                              color: _isSentenceSaved ? const Color(0xFF3B82F6) : const Color(0xFF2563EB),
+                            ),
+                          ),
+                          style: OutlinedButton.styleFrom(
+                            padding: const EdgeInsets.symmetric(vertical: 12),
+                            side: BorderSide(
+                              color: _isSentenceSaved ? const Color(0xFF3B82F6) : const Color(0xFF2563EB),
+                            ),
+                            shape: RoundedRectangleBorder(
+                              borderRadius: BorderRadius.circular(10),
+                            ),
+                          ),
+                        ),
+                      ),
+                  ],
+                ),
+                const SizedBox(height: 10),
+
+                // Nút Đóng
+                SizedBox(
+                  width: double.infinity,
+                  child: ElevatedButton(
+                    onPressed: () => Navigator.pop(context),
+                    style: ElevatedButton.styleFrom(
+                      backgroundColor: Colors.grey[200],
+                      foregroundColor: Colors.black87,
+                      elevation: 0,
+                      padding: const EdgeInsets.symmetric(vertical: 12),
+                      shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(10),
+                      ),
+                    ),
+                    child: const Text('ĐÓNG', style: TextStyle(fontWeight: FontWeight.bold)),
+                  ),
+                ),
+              ],
+            ),
           );
         },
       ),

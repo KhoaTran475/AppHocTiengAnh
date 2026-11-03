@@ -258,8 +258,10 @@ Nhiệm vụ của bạn là đánh giá và chấm điểm bài viết IELTS Wr
 
 BẠN PHẢI ĐÁNH GIÁ ĐỦ 4 TIÊU CHÍ (Band từ 1.0 đến 9.0, bước nhảy 0.5):
 1. Task Achievement (Task 1) / Task Response (Task 2):
-   - Mức độ hoàn thành các yêu cầu của đề bài.
-   - Task 1: Có Overview rõ ràng bao quát xu hướng chính không? Có chọn lọc và so sánh số liệu quan trọng không?
+   - Mức độ hoàn thành các yêu cầu của đề bài và ĐỘ CHÍNH XÁC CỦA THÔNG TIN.
+   - Task 1: Có Overview rõ ràng bao quát xu hướng chính không? Các số liệu đưa ra có ĐÚNG với DỮ LIỆU BIỂU ĐỒ được cung cấp không?
+     * LƯU Ý BẮT BUỘC: Nếu có từ 1-2 lỗi sai số liệu so với biểu đồ gốc hoặc thiếu đơn vị: Tiêu chí task_response KHÔNG ĐƯỢC VƯỢT QUÁ 5.0.
+     * Nếu có từ 3 lỗi sai số liệu trở lên hoặc tự mâu thuẫn giữa Overview và Thân bài (VD: Overview nói A luôn cao hơn B, nhưng Thân bài lại viết B đạt 78% còn A chỉ 9%): Tiêu chí task_response BẮT BUỘC BỊ KHỐNG CHẾ Ở MỨC 4.0 - 4.5.
    - Task 2: Có trả lời đầy đủ tất cả các phần của câu hỏi không? Lập trường rõ ràng và nhất quán không? Có ý tưởng phát triển kèm dẫn chứng không?
 2. Coherence and Cohesion (Mạch lạc và liên kết):
    - Tổ chức và phân bổ đoạn văn logic, ý tưởng phát triển tuần tự.
@@ -485,6 +487,25 @@ Hãy chấm điểm bài viết trên theo đúng 4 tiêu chí IELTS và xuất 
     lr_b = float(criteria.get("lexical_resource", {}).get("band", 6.0))
     gr_b = float(criteria.get("grammatical_range_accuracy", {}).get("band", 6.0))
 
+    # Lưu ý 2: Lọc bỏ toàn bộ lỗi bịa không có trong bài gốc (Anti-Hallucination)
+    raw_errors = data.get("errors", [])
+    valid_errors = validate_and_filter_error_quotes(raw_errors, essay_text)
+
+    # Khắc phục lỗi sai số liệu trong Task 1 (Safety Guardrail theo chuẩn IELTS Band Descriptors):
+    # Nếu là Task 1 và AI phát hiện các lỗi sai số liệu / sai lệch phần trăm so với biểu đồ gốc
+    if task_type == "Task 1" and chart_data:
+        data_err_keywords = ["số liệu", "phần trăm", "data", "figure", "inaccurate", "không chính xác", "sai lệch"]
+        data_error_count = sum(
+            1 for e in valid_errors
+            if any(kw in (str(e.get("explain_vi", "")) + " " + str(e.get("fix", ""))).lower() for kw in data_err_keywords)
+        )
+        if data_error_count >= 3:
+            task_b = min(task_b, 4.0)
+            logger.info(f"📉 [IELTS Task 1 Penalty] Phát hiện {data_error_count} lỗi sai số liệu nghiêm trọng (toàn bộ biểu đồ) -> Khống chế Task Achievement: {task_b}")
+        elif data_error_count >= 1:
+            task_b = min(task_b, 5.0)
+            logger.info(f"📉 [IELTS Task 1 Penalty] Phát hiện {data_error_count} lỗi số liệu -> Khống chế Task Achievement: {task_b}")
+
     # Áp dụng quy tắc trừ điểm của IELTS nếu thiếu số từ tối thiểu
     if words < min_words * 0.7:
         task_b = min(task_b, 5.0)
@@ -493,10 +514,6 @@ Hãy chấm điểm bài viết trên theo đúng 4 tiêu chí IELTS và xuất 
 
     overall_band = calculate_ielts_overall_band(task_b, cc_b, lr_b, gr_b)
     overall_num = float(overall_band)
-
-    # Lưu ý 2: Lọc bỏ toàn bộ lỗi bịa không có trong bài gốc (Anti-Hallucination)
-    raw_errors = data.get("errors", [])
-    valid_errors = validate_and_filter_error_quotes(raw_errors, essay_text)
 
     passed = words >= min_words and overall_num >= pass_score_req
     if overall_num >= target_band_num and words >= min_words:

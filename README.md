@@ -37,7 +37,14 @@
   - Giao diện làm bài trực quan, tích hợp trình phát audio cho bài nghe.
   - Chấm điểm tức thì, xem giải thích chi tiết từng câu hỏi hỗ trợ bởi AI (`explainAnswer`).
 
-### 5. 🛠️ Cổng Quản Trị Toàn Diện (Admin Web Dashboard)
+### 5. 📝 Hệ Thống Ghi Chú Học Tập Thông Minh (Smart Notes System)
+- **Tạo ghi chú theo ngữ cảnh**: Nút ghi chú nhanh (`QuickNoteFab`, `NoteButton`) tích hợp xuyên suốt các màn hình: Reading, Listening, Writing, Speaking, Học từ vựng và bảng giải thích AI.
+- **Quản lý ghi chú linh hoạt**: Lọc ghi chú theo kỹ năng, gắn thẻ tags, tìm kiếm nội dung, ghim (pin) các ghi chú quan trọng.
+- **Offline-First & Đồng bộ đám mây (Cloud Sync)**: Lưu trữ tức thì vào SQLite cục bộ và tự động đồng bộ 2 chiều lên Supabase (`NoteSyncService`).
+- **Xuất dữ liệu (Export Notes)**: Dễ dàng xuất ghi chú ra định dạng Text / Markdown (`NoteExportService`) để lưu trữ hoặc ôn tập.
+- **Bộ kiểm thử toàn diện**: Bộ test suite từ P0 đến P4 kiểm thử toàn bộ luồng tạo, cập nhật, xóa, đồng bộ và giao diện ghi chú.
+
+### 6. 🛠️ Cổng Quản Trị Toàn Diện (Admin Web Dashboard)
 - Giao diện Web SPA tích hợp tại `http://127.0.0.1:8000/admin/`.
 - Thống kê Dashboard KPIs (tổng người học, số bài thi đã chấm, tỉ lệ hoàn thành).
 - Quản lý kho bài học 4 kỹ năng IELTS (Tạo, sửa, xóa bài tập, soạn câu hỏi).

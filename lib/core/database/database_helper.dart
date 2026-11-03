@@ -6,6 +6,7 @@ import 'package:path/path.dart';
 import '../../data/models/object_mapping_model.dart';
 import '../../data/models/vocabulary_item_model.dart';
 import '../../data/models/user_model.dart';
+import '../../data/models/note_model.dart';
 import 'supabase_config.dart';
 import '../services/notebook_service.dart';
 
@@ -32,6 +33,15 @@ class DatabaseHelper {
       version: 1,
       onCreate: _createDB,
     );
+
+    // Khởi tạo và tự động migration bảng Notes (Sổ tay ghi chú đa ngữ cảnh)
+    try {
+      await _ensureNotesTable(db);
+      await _migrateVocabNotebookToNotes(db);
+      await _fixListeningNotesSource(db);
+    } catch (e) {
+      log('Lỗi auto-sync/migration Notes table: $e');
+    }
 
     // Tự động kiểm tra và nâng cấp cột email cho Users
     try {
@@ -113,6 +123,9 @@ class DatabaseHelper {
         speakingPart1Translation $textNullable
       )
     ''');
+
+    // 4. Bảng Notes: Sổ tay ghi chú đa năng (Vocab, Sentence, Feedback, Free)
+    await _ensureNotesTable(db);
 
     // Nạp dữ liệu mẫu ban đầu (Admin, Learner mẫu và 80 nhãn từ vựng)
     await _seedInitialUsers(db);
@@ -475,5 +488,295 @@ class DatabaseHelper {
   Future<void> close() async {
     final db = await instance.database;
     db.close();
+  }
+
+  // ─────────────────────────────────────────────────────────────
+  // QUẢN LÝ VÀ DI CHUYỂN BẢNG NOTES (SỔ TAY GHI CHÚ ĐA NĂNG)
+  // ─────────────────────────────────────────────────────────────
+
+  /// Đảm bảo bảng Notes và index tồn tại
+  Future<void> _ensureNotesTable(Database db) async {
+    await db.execute('''
+      CREATE TABLE IF NOT EXISTS Notes (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        uuid TEXT NOT NULL UNIQUE,
+        userId INTEGER NOT NULL,
+        type TEXT NOT NULL,
+        source TEXT NOT NULL,
+        sourceRef TEXT,
+        title TEXT NOT NULL,
+        content TEXT NOT NULL,
+        userNote TEXT,
+        tags TEXT,
+        color INTEGER,
+        isPinned INTEGER DEFAULT 0,
+        vocabData TEXT,
+        createdAt TEXT NOT NULL,
+        updatedAt TEXT NOT NULL,
+        deletedAt TEXT,
+        FOREIGN KEY (userId) REFERENCES Users (id) ON DELETE CASCADE
+      )
+    ''');
+    await db.execute('CREATE INDEX IF NOT EXISTS idx_notes_user_type ON Notes(userId, type);');
+    await db.execute('CREATE INDEX IF NOT EXISTS idx_notes_uuid ON Notes(uuid);');
+    await db.execute('CREATE INDEX IF NOT EXISTS idx_notes_deleted ON Notes(deletedAt);');
+  }
+
+  /// Tự động di chuyển dữ liệu cũ từ Vocabulary_Notebook sang Notes (type = vocab)
+  Future<void> _migrateVocabNotebookToNotes(Database db) async {
+    try {
+      final oldItems = await db.query('Vocabulary_Notebook');
+      if (oldItems.isEmpty) return;
+
+      int migratedCount = 0;
+      for (final raw in oldItems) {
+        final vocab = VocabularyItemModel.fromMap(raw);
+        final title = vocab.word.trim();
+        final existing = await db.query(
+          'Notes',
+          columns: ['id'],
+          where: 'userId = ? AND LOWER(title) = ? AND type = ? AND deletedAt IS NULL',
+          whereArgs: [vocab.userId, title.toLowerCase(), NoteType.vocab],
+          limit: 1,
+        );
+
+        if (existing.isEmpty) {
+          final note = NoteModel.fromVocabItem(vocab);
+          await db.insert('Notes', note.toMap(), conflictAlgorithm: ConflictAlgorithm.replace);
+          migratedCount++;
+        }
+      }
+      if (migratedCount > 0) {
+        log('✅ Đã migrate thành công $migratedCount từ vựng sang bảng Notes mới!');
+      }
+    } catch (e) {
+      log('⚠️ Lỗi di chuyển dữ liệu Vocabulary_Notebook -> Notes: $e');
+    }
+  }
+
+  /// Tự động sửa chữa các ghi chú từ bài Listening nhưng bị gắn nhầm nguồn Reading
+  Future<void> _fixListeningNotesSource(Database db) async {
+    try {
+      final updated = await db.rawUpdate('''
+        UPDATE Notes 
+        SET source = 'listening',
+            tags = REPLACE(tags, '"Reading"', '"Listening"')
+        WHERE source = 'reading' 
+          AND (
+            sourceRef LIKE '%"lesson_id":"l%' 
+            OR sourceRef LIKE '%"lesson_id": "l%'
+            OR sourceRef LIKE '%lesson_id%l1%'
+            OR sourceRef LIKE '%lesson_id%l2%'
+            OR sourceRef LIKE '%lesson_id%l3%'
+            OR sourceRef LIKE '%lesson_id%l4%'
+            OR sourceRef LIKE '%lesson_id%l5%'
+            OR title LIKE '%Dr. Marcus%'
+          );
+      ''');
+      if (updated > 0) {
+        log('✅ [DatabaseHelper] Đã tự động sửa $updated ghi chú Listening bị gắn nhầm nguồn Reading!');
+      }
+    } catch (e) {
+      log('⚠️ Lỗi fixListeningNotesSource: $e');
+    }
+  }
+
+  /// Phương thức public để gọi sửa chữa nguồn Listening từ bất cứ đâu
+  Future<int> fixListeningNotesSource() async {
+    try {
+      final db = await instance.database;
+      return await db.rawUpdate('''
+        UPDATE Notes 
+        SET source = 'listening',
+            tags = REPLACE(tags, '"Reading"', '"Listening"')
+        WHERE source = 'reading' 
+          AND (
+            sourceRef LIKE '%"lesson_id":"l%' 
+            OR sourceRef LIKE '%"lesson_id": "l%'
+            OR sourceRef LIKE '%lesson_id%l1%'
+            OR sourceRef LIKE '%lesson_id%l2%'
+            OR sourceRef LIKE '%lesson_id%l3%'
+            OR sourceRef LIKE '%lesson_id%l4%'
+            OR sourceRef LIKE '%lesson_id%l5%'
+            OR title LIKE '%Dr. Marcus%'
+          );
+      ''');
+    } catch (e) {
+      log('Lỗi fixListeningNotesSource: $e');
+      return 0;
+    }
+  }
+
+  // ─────────────────────────────────────────────────────────────
+  // PHƯƠNG THỨC TRUY VẤN: NOTES (SỔ TAY GHI CHÚ ĐA NĂNG)
+  // ─────────────────────────────────────────────────────────────
+
+  /// Thêm mới một ghi chú vào SQLite
+  Future<int> insertNote(NoteModel note) async {
+    final db = await instance.database;
+    return await db.insert(
+      'Notes',
+      note.toMap(),
+      conflictAlgorithm: ConflictAlgorithm.replace,
+    );
+  }
+
+  /// Cập nhật ghi chú
+  Future<int> updateNote(NoteModel note) async {
+    final db = await instance.database;
+    final map = note.toMap();
+    map['updatedAt'] = DateTime.now().toIso8601String();
+    return await db.update(
+      'Notes',
+      map,
+      where: 'id = ?',
+      whereArgs: [note.id],
+    );
+  }
+
+  /// Xóa ghi chú (Mặc định là Soft Delete để hỗ trợ đồng bộ đám mây an toàn)
+  Future<int> deleteNote(int id, {bool softDelete = true}) async {
+    final db = await instance.database;
+    if (softDelete) {
+      final now = DateTime.now().toIso8601String();
+      return await db.update(
+        'Notes',
+        {
+          'deletedAt': now,
+          'updatedAt': now,
+        },
+        where: 'id = ?',
+        whereArgs: [id],
+      );
+    } else {
+      return await db.delete(
+        'Notes',
+        where: 'id = ?',
+        whereArgs: [id],
+      );
+    }
+  }
+
+  /// Khôi phục ghi chú đã bị soft delete
+  Future<int> restoreNote(int id) async {
+    final db = await instance.database;
+    return await db.update(
+      'Notes',
+      {
+        'deletedAt': null,
+        'updatedAt': DateTime.now().toIso8601String(),
+      },
+      where: 'id = ?',
+      whereArgs: [id],
+    );
+  }
+
+  /// Lấy danh sách ghi chú theo User, có thể lọc theo type, source, và tìm kiếm
+  Future<List<NoteModel>> getNotesByUser(
+    int userId, {
+    String? type,
+    String? source,
+    bool includeDeleted = false,
+    String? searchQuery,
+  }) async {
+    final db = await instance.database;
+    final whereClauses = <String>['userId = ?'];
+    final whereArgs = <dynamic>[userId];
+
+    if (!includeDeleted) {
+      whereClauses.add('deletedAt IS NULL');
+    }
+
+    if (type != null && type.isNotEmpty && type != 'all') {
+      whereClauses.add('type = ?');
+      whereArgs.add(type);
+    }
+
+    if (source != null && source.isNotEmpty && source != 'all') {
+      whereClauses.add('source = ?');
+      whereArgs.add(source);
+    }
+
+    if (searchQuery != null && searchQuery.trim().isNotEmpty) {
+      final q = '%${searchQuery.trim().toLowerCase()}%';
+      whereClauses.add('(LOWER(title) LIKE ? OR LOWER(content) LIKE ? OR LOWER(userNote) LIKE ?)');
+      whereArgs.addAll([q, q, q]);
+    }
+
+    final results = await db.query(
+      'Notes',
+      where: whereClauses.join(' AND '),
+      whereArgs: whereArgs,
+      orderBy: 'isPinned DESC, updatedAt DESC',
+    );
+
+    return results.map((map) => NoteModel.fromMap(map)).toList();
+  }
+
+  /// Lấy ghi chú theo ID
+  Future<NoteModel?> getNoteById(int id) async {
+    final db = await instance.database;
+    final results = await db.query(
+      'Notes',
+      where: 'id = ?',
+      whereArgs: [id],
+      limit: 1,
+    );
+    if (results.isNotEmpty) {
+      return NoteModel.fromMap(results.first);
+    }
+    return null;
+  }
+
+  /// Lấy ghi chú theo UUID
+  Future<NoteModel?> getNoteByUuid(String uuid) async {
+    final db = await instance.database;
+    final results = await db.query(
+      'Notes',
+      where: 'uuid = ?',
+      whereArgs: [uuid],
+      limit: 1,
+    );
+    if (results.isNotEmpty) {
+      return NoteModel.fromMap(results.first);
+    }
+    return null;
+  }
+
+  /// Kiểm tra nội dung (từ vựng / câu) đã được lưu chưa
+  Future<bool> isNoteSaved(int userId, String title, {String? type}) async {
+    final db = await instance.database;
+    final where = type != null
+        ? 'userId = ? AND LOWER(title) = ? AND type = ? AND deletedAt IS NULL'
+        : 'userId = ? AND LOWER(title) = ? AND deletedAt IS NULL';
+    final args = type != null
+        ? [userId, title.trim().toLowerCase(), type]
+        : [userId, title.trim().toLowerCase()];
+
+    final results = await db.query(
+      'Notes',
+      where: where,
+      whereArgs: args,
+      limit: 1,
+    );
+    return results.isNotEmpty;
+  }
+
+  /// Đếm số ghi chú theo User và loại
+  Future<int> getNotesCount(int userId, {String? type}) async {
+    final db = await instance.database;
+    if (type != null && type.isNotEmpty && type != 'all') {
+      final res = await db.rawQuery(
+        'SELECT COUNT(*) as count FROM Notes WHERE userId = ? AND type = ? AND deletedAt IS NULL',
+        [userId, type],
+      );
+      return Sqflite.firstIntValue(res) ?? 0;
+    } else {
+      final res = await db.rawQuery(
+        'SELECT COUNT(*) as count FROM Notes WHERE userId = ? AND deletedAt IS NULL',
+        [userId],
+      );
+      return Sqflite.firstIntValue(res) ?? 0;
+    }
   }
 }

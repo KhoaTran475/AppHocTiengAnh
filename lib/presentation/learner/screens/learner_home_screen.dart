@@ -4,6 +4,7 @@ import '../../../core/database/database_helper.dart';
 import '../../../core/theme/app_theme.dart';
 import '../../../data/datasources/api_service.dart';
 import '../../../data/models/vocabulary_item_model.dart';
+import '../../../data/repositories/note_repository.dart';
 import '../../auth/providers/auth_provider.dart';
 import '../../auth/widgets/face_scan_dialog.dart';
 import 'camera_scan_screen.dart';
@@ -43,6 +44,9 @@ class _LearnerHomeScreenState extends State<LearnerHomeScreen> {
         selectedIndex: _currentIndex,
         onDestinationSelected: (index) {
           setState(() => _currentIndex = index);
+          if (index == 1) {
+            NoteRepository.instance.notifyNotesChanged();
+          }
         },
         backgroundColor: Colors.white,
         elevation: 4,

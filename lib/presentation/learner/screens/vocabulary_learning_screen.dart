@@ -5,7 +5,9 @@ import '../../../core/database/database_helper.dart';
 import '../../../core/theme/app_theme.dart';
 import '../../../data/datasources/api_service.dart';
 import '../../../data/models/vocab_learning_models.dart';
+import '../../../data/models/note_model.dart';
 import '../../auth/providers/auth_provider.dart';
+import '../widgets/quick_note_fab.dart';
 
 /// Màn hình Học Từ Vựng Phân Cấp (Cơ bản -> Nâng cao 5 Level) tích hợp Ollama Qwen 2.5 Local.
 /// Bao gồm 3 chế độ học tập chuyên sâu:
@@ -907,18 +909,72 @@ class _VocabularyLearningScreenState extends State<VocabularyLearningScreen>
           ],
         ),
       ),
-      floatingActionButton: (_currentTabIndex == 0 && MediaQuery.of(context).viewInsets.bottom == 0)
-          ? FloatingActionButton.extended(
-              onPressed: _showGenerateWithQwenDialog,
-              backgroundColor: activeColor,
-              foregroundColor: Colors.white,
-              icon: const Icon(Icons.auto_awesome_rounded),
-              label: const Text(
-                'SINH TỪ QWEN 2.5',
-                style: TextStyle(fontWeight: FontWeight.bold),
-              ),
-            )
-          : null,
+      floatingActionButton: _buildFloatingActionButtons(activeColor),
+    );
+  }
+
+  /// Quản lý bố cục nút nổi (FAB) thông minh: Xếp chồng cây bút + Qwen ở Tab 0, 
+  /// và chỉ hiển thị cây bút ghi chú ở Tab 1 & Tab 2, tự động ẩn khi mở bàn phím
+  Widget? _buildFloatingActionButtons(Color activeColor) {
+    if (MediaQuery.of(context).viewInsets.bottom > 0) {
+      return null;
+    }
+
+    final String levelBadge = _levelMetaUI[_selectedLevel]?['badge'] ?? 'Level $_selectedLevel';
+
+    if (_currentTabIndex == 0) {
+      return Column(
+        mainAxisSize: MainAxisSize.min,
+        crossAxisAlignment: CrossAxisAlignment.end,
+        children: [
+          QuickNoteFab(
+            source: NoteSource.vocabLearning,
+            sourceRef: NoteSourceRef.encode(
+              screen: NoteSource.vocabLearning,
+              stageNumber: _selectedLevel,
+              title: 'Học từ vựng - $levelBadge',
+              subtitle: 'Chủ đề: $_selectedTopic',
+            ),
+            initialTags: ['vocabulary', 'level_$_selectedLevel'],
+            backgroundColor: const Color(0xFF10B981),
+            heroTag: 'fab_vocab_quick_note',
+            tooltip: 'Ghi chú từ vựng',
+            isMini: true,
+          ),
+          const SizedBox(height: 12),
+          FloatingActionButton.extended(
+            heroTag: 'fab_vocab_qwen_generate',
+            onPressed: _showGenerateWithQwenDialog,
+            backgroundColor: activeColor,
+            foregroundColor: Colors.white,
+            icon: const Icon(Icons.auto_awesome_rounded),
+            label: const Text(
+              'SINH TỪ QWEN 2.5',
+              style: TextStyle(fontWeight: FontWeight.bold),
+            ),
+          ),
+        ],
+      );
+    }
+
+    return QuickNoteFab(
+      source: NoteSource.vocabLearning,
+      sourceRef: NoteSourceRef.encode(
+        screen: NoteSource.vocabLearning,
+        stageNumber: _selectedLevel,
+        title: _currentTabIndex == 1
+            ? 'Sentence Lab - $levelBadge'
+            : 'Vocab Quiz - $levelBadge',
+        subtitle: 'Chủ đề: $_selectedTopic',
+      ),
+      initialTags: [
+        'vocabulary',
+        'level_$_selectedLevel',
+        _currentTabIndex == 1 ? 'sentence_lab' : 'vocab_quiz',
+      ],
+      backgroundColor: activeColor,
+      heroTag: 'fab_vocab_quick_note',
+      tooltip: 'Ghi chú học tập',
     );
   }
 
@@ -1201,7 +1257,7 @@ class _VocabularyLearningScreenState extends State<VocabularyLearningScreen>
                     )
                   : ListView.builder(
                       physics: const AlwaysScrollableScrollPhysics(),
-                      padding: const EdgeInsets.fromLTRB(16, 12, 16, 88),
+                      padding: const EdgeInsets.fromLTRB(16, 12, 16, 140),
                       itemCount: _filteredCards.length,
                       itemBuilder: (context, index) {
                         return _buildVocabLadderCard(_filteredCards[index], activeColor);
