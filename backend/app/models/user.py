@@ -23,6 +23,8 @@ class User(Base):
     username = Column(String(100), unique=True, index=True, nullable=False)
     hashed_password = Column(String(255), nullable=False)
     role = Column(String(20), default="learner", nullable=False)  # 'learner' hoặc 'admin'
+    email = Column(String(255), unique=True, index=True, nullable=True)
+    is_email_verified = Column(Boolean, default=False, nullable=False)
     supabase_uuid = Column(String(100), nullable=True)  # UUID tương ứng trên Supabase profiles
 
     # Cấu hình bảo mật sinh trắc học FaceID (ML Kit + ONNX MobileFaceNet)

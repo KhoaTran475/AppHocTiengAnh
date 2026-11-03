@@ -3,6 +3,8 @@ class UserModel {
   final String username;
   final String role;
   final String createdAt;
+  final String? email;
+  final bool isEmailVerified;
   final bool isFaceAuthEnabled;
   final String? faceRegisteredAt;
 
@@ -11,6 +13,8 @@ class UserModel {
     required this.username,
     required this.role,
     required this.createdAt,
+    this.email,
+    this.isEmailVerified = false,
     this.isFaceAuthEnabled = false,
     this.faceRegisteredAt,
   });
@@ -22,6 +26,11 @@ class UserModel {
         ? rawFaceEnabled
         : (rawFaceEnabled is int ? rawFaceEnabled == 1 : false);
 
+    final rawEmailVerified = map['is_email_verified'] ?? map['isEmailVerified'];
+    final bool emailVerified = rawEmailVerified is bool
+        ? rawEmailVerified
+        : (rawEmailVerified is int ? rawEmailVerified == 1 : false);
+
     final rawRegisteredAt = map['face_registered_at'] ?? map['faceRegisteredAt'];
 
     return UserModel(
@@ -29,6 +38,8 @@ class UserModel {
       username: map['username'] as String? ?? '',
       role: map['role'] as String? ?? 'learner',
       createdAt: map['createdAt'] as String? ?? map['created_at'] as String? ?? '',
+      email: map['email'] as String?,
+      isEmailVerified: emailVerified,
       isFaceAuthEnabled: faceEnabled,
       faceRegisteredAt: rawRegisteredAt?.toString(),
     );
@@ -40,6 +51,8 @@ class UserModel {
       'username': username,
       'role': role,
       'createdAt': createdAt,
+      'email': email,
+      'is_email_verified': isEmailVerified ? 1 : 0,
       'is_face_auth_enabled': isFaceAuthEnabled ? 1 : 0,
       'face_registered_at': faceRegisteredAt,
     };
@@ -50,6 +63,8 @@ class UserModel {
     String? username,
     String? role,
     String? createdAt,
+    String? email,
+    bool? isEmailVerified,
     bool? isFaceAuthEnabled,
     String? faceRegisteredAt,
   }) {
@@ -58,6 +73,8 @@ class UserModel {
       username: username ?? this.username,
       role: role ?? this.role,
       createdAt: createdAt ?? this.createdAt,
+      email: email ?? this.email,
+      isEmailVerified: isEmailVerified ?? this.isEmailVerified,
       isFaceAuthEnabled: isFaceAuthEnabled ?? this.isFaceAuthEnabled,
       faceRegisteredAt: faceRegisteredAt ?? this.faceRegisteredAt,
     );

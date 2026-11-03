@@ -22,6 +22,22 @@ class Settings(BaseSettings):
     # Database
     DATABASE_URL: str = "sqlite:///./ielts_vision_backend.db"
 
+    # SMTP Configuration (Gmail OTP)
+    SMTP_HOST: str = "smtp.gmail.com"
+    SMTP_PORT: int = 465
+    SMTP_USER: str = ""
+    SMTP_PASSWORD: str = ""
+    SMTP_FROM_NAME: str = "IELTS Vision"
+    OTP_EXPIRE_MINUTES: int = 5
+
+    # Local Ollama AI Configuration (Vision & Vocabulary Qwen 2.5)
+    OLLAMA_BASE_URL: str = "http://localhost:11434"
+    OLLAMA_VISION_MODEL: str = "llava-phi3:latest"
+    OLLAMA_VOCAB_MODEL: str = "qwen2.5:latest"
+    OLLAMA_GRADING_MODEL: str = "qwen2.5:7b"
+    AI_EXPLAIN_TIMEOUT_SECONDS: int = 40  # Dưới 60s để tránh proxy Nginx/ngrok timeout 504
+    AI_WRITING_TIMEOUT_SECONDS: int = 60
+
     # CORS
     BACKEND_CORS_ORIGINS: Union[List[str], str] = ["*"]
 

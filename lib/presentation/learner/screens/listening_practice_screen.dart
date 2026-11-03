@@ -8,6 +8,7 @@ import '../../../data/models/skill_models.dart';
 import '../../../data/repositories/skill_repository.dart';
 import '../../../data/datasources/api_service.dart';
 import '../../auth/providers/auth_provider.dart';
+import '../widgets/ai_explanation_bottom_sheet.dart';
 
 /// Màn hình Luyện thi IELTS Listening Chuyên sâu theo cơ chế Vượt ải (Gamified Stages).
 /// Tính năng:
@@ -710,6 +711,33 @@ class _ListeningPracticeScreenState extends State<ListeningPracticeScreen> {
                               ),
                             ),
                           ],
+                        ),
+                      ),
+                      const SizedBox(height: 8),
+                      Align(
+                        alignment: Alignment.centerRight,
+                        child: TextButton.icon(
+                          onPressed: () {
+                            AiExplanationBottomSheet.show(
+                              context,
+                              lessonId: _selectedLesson.id,
+                              questionId: q.id,
+                              userChoice: _userAnswers[q.id] ?? '',
+                              questionText: q.questionText,
+                              correctAnswer: q.correctAnswer,
+                              initialExplanation: q.explanation,
+                            );
+                          },
+                          icon: const Icon(Icons.psychology_rounded, size: 18, color: Colors.indigo),
+                          label: const Text(
+                            '🤖 AI Phân tích chi tiết & Bẫy đề',
+                            style: TextStyle(fontSize: 12.5, fontWeight: FontWeight.bold, color: Colors.indigo),
+                          ),
+                          style: TextButton.styleFrom(
+                            backgroundColor: Colors.indigo.withValues(alpha: 0.08),
+                            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+                            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+                          ),
                         ),
                       ),
                     ],

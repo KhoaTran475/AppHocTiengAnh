@@ -1,5 +1,7 @@
 library;
 
+import 'package:flutter/material.dart';
+
 /// Model dữ liệu cho bài học IELTS Reading
 class ReadingQuestion {
   final int id;
@@ -166,6 +168,7 @@ class WritingLessonModel {
   final String sampleEssay;
   final String sampleTranslation;
   final List<String> academicVocabulary;
+  final ChartDataModel? chartData; // Cấu hình biểu đồ động hoặc ảnh Supabase
 
   int get stageNumber => stageNumberValue ?? 1;
   String get difficultyLabel => difficultyLabelValue ?? 'Ải Cơ Bản';
@@ -187,7 +190,116 @@ class WritingLessonModel {
     required this.sampleEssay,
     required this.sampleTranslation,
     required this.academicVocabulary,
+    this.chartData,
   })  : stageNumberValue = stageNumber,
         difficultyLabelValue = difficultyLabel,
         passScoreRequiredValue = passScoreRequired;
 }
+
+/// Model đại diện cho một chuỗi dữ liệu trong biểu đồ Task 1 (VD: Nhóm Đô thị, Nông thôn)
+class ChartSeriesModel {
+  final String name;
+  final String hexColor;
+  final List<double> values;
+
+  const ChartSeriesModel({
+    required this.name,
+    this.hexColor = '#1E3A8A',
+    required this.values,
+  });
+
+  /// Getter chuyển đổi mã màu Hex (VD: "#1E3A8A") sang Color an toàn
+  Color get color => parseHexColor(hexColor);
+
+  /// Hàm tiện ích chuyển mã màu Hex sang Flutter Color an toàn, có màu mặc định khi chuỗi không hợp lệ
+  static Color parseHexColor(String? hexString, [Color defaultColor = const Color(0xFF1E3A8A)]) {
+    if (hexString == null || hexString.isEmpty) return defaultColor;
+    try {
+      String cleanHex = hexString.replaceAll('#', '').trim();
+      if (cleanHex.length == 6) {
+        cleanHex = 'FF$cleanHex';
+      } else if (cleanHex.length == 3) {
+        cleanHex = 'FF${cleanHex[0]}${cleanHex[0]}${cleanHex[1]}${cleanHex[1]}${cleanHex[2]}${cleanHex[2]}';
+      }
+      final intVal = int.tryParse(cleanHex, radix: 16);
+      if (intVal != null) {
+        return Color(intVal);
+      }
+    } catch (_) {}
+    return defaultColor;
+  }
+
+  factory ChartSeriesModel.fromMap(Map<String, dynamic> map) {
+    final rawValues = map['values'] as List<dynamic>? ?? [];
+    final List<double> vals = rawValues.map((v) {
+      if (v is num) return v.toDouble();
+      return double.tryParse(v.toString()) ?? 0.0;
+    }).toList();
+
+    return ChartSeriesModel(
+      name: map['name']?.toString() ?? 'Nhóm số liệu',
+      hexColor: map['color']?.toString() ?? '#1E3A8A',
+      values: vals,
+    );
+  }
+
+  Map<String, dynamic> toMap() {
+    return {
+      'name': name,
+      'color': hexColor,
+      'values': values,
+    };
+  }
+}
+
+/// Model cấu hình biểu đồ cho IELTS Writing Task 1
+/// Hỗ trợ cả 2 dạng: Biểu đồ số liệu động ('bar' / 'line') hoặc Ảnh đề thi ('image' lưu trên Supabase Storage)
+class ChartDataModel {
+  final String type; // 'bar', 'line', 'image'
+  final String? title;
+  final String? unit; // Đơn vị trục tung, VD: '%', 'TWh', 'Triệu người'
+  final List<String> categories; // Các mốc trục hoành, VD: ['2015', '2018', '2020', '2025']
+  final List<ChartSeriesModel> series;
+  final String? imageUrl; // Đường dẫn ảnh Supabase Storage (khi type == 'image')
+
+  const ChartDataModel({
+    required this.type,
+    this.title,
+    this.unit,
+    this.categories = const [],
+    this.series = const [],
+    this.imageUrl,
+  });
+
+  bool get isImage => type == 'image' && (imageUrl != null && imageUrl!.isNotEmpty);
+  bool get isBarChart => type == 'bar';
+  bool get isLineGraph => type == 'line';
+
+  factory ChartDataModel.fromMap(Map<String, dynamic> map) {
+    final rawType = (map['type']?.toString() ?? 'bar').toLowerCase();
+    final rawCats = (map['categories'] as List<dynamic>? ?? []).map((e) => e.toString()).toList();
+    final rawSeries = (map['series'] as List<dynamic>? ?? []);
+    final seriesList = rawSeries.map((s) => ChartSeriesModel.fromMap(s as Map<String, dynamic>)).toList();
+
+    return ChartDataModel(
+      type: rawType,
+      title: map['title']?.toString(),
+      unit: map['unit']?.toString() ?? '%',
+      categories: rawCats,
+      series: seriesList,
+      imageUrl: map['image_url']?.toString() ?? map['imageUrl']?.toString(),
+    );
+  }
+
+  Map<String, dynamic> toMap() {
+    return {
+      'type': type,
+      if (title != null) 'title': title,
+      if (unit != null) 'unit': unit,
+      'categories': categories,
+      'series': series.map((s) => s.toMap()).toList(),
+      if (imageUrl != null) 'image_url': imageUrl,
+    };
+  }
+}
+

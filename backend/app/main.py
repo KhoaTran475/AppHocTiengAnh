@@ -6,6 +6,7 @@ from app.core.config import settings
 from app.core.supabase import verify_supabase_connection
 from app.api.v1.router import api_router
 from app.db.session import engine, Base, SessionLocal
+import app.models  # noqa: F401
 from app.services.user_service import seed_default_users
 
 logging.basicConfig(
@@ -31,7 +32,9 @@ async def lifespan(app: FastAPI):
         seed_default_mappings(db)
         from app.services.skill_service import seed_default_skill_lessons
         seed_default_skill_lessons(db)
-        logger.info("Khởi tạo và đồng bộ người dùng, từ vựng & bài học 4 kỹ năng thành công!")
+        from app.services.ollama_vocab_service import seed_default_vocab_learning
+        seed_default_vocab_learning(db)
+        logger.info("Khởi tạo và đồng bộ người dùng, từ vựng, lộ trình từ vựng 5 cấp độ & bài học 4 kỹ năng thành công!")
     except Exception as e:
         logger.warning(f"Lỗi khởi tạo dữ liệu ban đầu: {e}")
     finally:
@@ -69,8 +72,24 @@ app.include_router(api_router, prefix=settings.API_V1_STR)
 
 # Cổng Quản Trị Web (Admin Web Portal)
 static_admin_dir = os.path.join(os.path.dirname(os.path.abspath(__file__)), "static_admin")
+class NoCacheStaticFiles(StaticFiles):
+    """StaticFiles luôn buộc trình duyệt kiểm tra lại (tránh dùng CSS/JS cũ trong cache sau khi cập nhật UI)."""
+
+    def file_response(self, *args, **kwargs):
+        response = super().file_response(*args, **kwargs)
+        response.headers["Cache-Control"] = "no-cache, must-revalidate"
+        return response
+
+
 if os.path.exists(static_admin_dir):
-    app.mount("/admin", StaticFiles(directory=static_admin_dir, html=True), name="admin")
+    app.mount("/admin", NoCacheStaticFiles(directory=static_admin_dir, html=True), name="admin")
+
+# Thư mục lưu trữ media tĩnh / fallback uploads
+static_uploads_dir = os.path.abspath(
+    os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "static", "uploads")
+)
+os.makedirs(static_uploads_dir, exist_ok=True)
+app.mount("/static/uploads", StaticFiles(directory=static_uploads_dir), name="static_uploads")
 
 
 @app.get("/")
@@ -85,11 +104,28 @@ def root():
 
 
 @app.get("/health")
+@app.get("/api/health")
 def health_check():
-    """Kiểm tra trạng thái server và kết nối tới Supabase Cloud."""
+    """Kiểm tra trạng thái server backend và kết nối cơ sở dữ liệu."""
     supabase_status = verify_supabase_connection()
     return {
         "status": "healthy" if supabase_status.get("status") == "connected" else "degraded",
         "service": settings.PROJECT_NAME,
+        "backend": "online",
+        "port": 8000,
         "supabase": supabase_status,
     }
+
+
+@app.get("/api/tags")
+async def get_tags_proxy():
+    """Endpoint trả về danh sách model Ollama :11434 phục vụ Admin Portal."""
+    import httpx
+    try:
+        async with httpx.AsyncClient(timeout=4.0) as client:
+            res = await client.get(f"{settings.OLLAMA_BASE_URL}/api/tags")
+            if res.status_code == 200:
+                return res.json()
+    except Exception as e:
+        logger.warning(f"Ollama tags proxy warning: {e}")
+    return {"models": []}

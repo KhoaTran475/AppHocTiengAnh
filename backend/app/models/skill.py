@@ -1,6 +1,41 @@
+import uuid
 from datetime import datetime
-from sqlalchemy import Column, Integer, String, Boolean, Float, DateTime, ForeignKey, JSON, UniqueConstraint
+from sqlalchemy import Column, Integer, BigInteger, String, Boolean, Float, DateTime, ForeignKey, JSON, UniqueConstraint, Text
+from sqlalchemy.dialects.postgresql import UUID as PG_UUID
+from sqlalchemy.types import TypeDecorator, CHAR
 from app.db.session import Base
+
+
+class UniversalUUID(TypeDecorator):
+    """Platform-independent UUID type: PostgreSQL UUID or SQLite CHAR(36)."""
+    impl = CHAR(36)
+    cache_ok = True
+
+    def load_dialect_impl(self, dialect):
+        if dialect.name == "postgresql":
+            return dialect.type_descriptor(PG_UUID(as_uuid=True))
+        return dialect.type_descriptor(CHAR(36))
+
+    def process_bind_param(self, value, dialect):
+        if value is None:
+            return None
+        if isinstance(value, uuid.UUID):
+            return value if dialect.name == "postgresql" else str(value)
+        try:
+            val_uuid = uuid.UUID(str(value))
+            return val_uuid if dialect.name == "postgresql" else str(val_uuid)
+        except Exception:
+            return value
+
+    def process_result_value(self, value, dialect):
+        if value is None:
+            return None
+        if isinstance(value, uuid.UUID):
+            return value
+        try:
+            return uuid.UUID(str(value))
+        except Exception:
+            return value
 
 
 class SkillLesson(Base):
@@ -30,8 +65,8 @@ class SkillLesson(Base):
 class PracticeHistory(Base):
     __tablename__ = "practice_history"
 
-    id = Column(Integer, primary_key=True, index=True, autoincrement=True)
-    user_id = Column(Integer, ForeignKey("users.id", ondelete="CASCADE"), nullable=False, index=True)
+    id = Column(BigInteger, primary_key=True, index=True, autoincrement=True)
+    user_id = Column(UniversalUUID, nullable=False, index=True)
     skill_type = Column(String(20), nullable=False, index=True)
     lesson_id = Column(String(50), nullable=False, index=True)
     lesson_title = Column(String(255), nullable=False)
@@ -62,3 +97,67 @@ class UserStageProgress(Base):
 
     def __repr__(self):
         return f"<UserStageProgress user_id={self.user_id} skill={self.skill_type} stage={self.stage_number} stars={self.stars}>"
+
+
+class AiExplanation(Base):
+    """
+    Bảng cache giải thích chi tiết đáp án IELTS Reading / Listening sinh bởi Qwen 2.5 7B.
+    Khóa cache duy nhất theo (lesson_id, question_id, user_choice).
+    Sử dụng UniversalUUID tương thích hoàn hảo Supabase PostgreSQL và SQLite.
+    """
+    __tablename__ = "ai_explanations"
+
+    id = Column(UniversalUUID, primary_key=True, default=uuid.uuid4)
+    lesson_id = Column(String(50), nullable=False, index=True)
+    question_id = Column(String(50), nullable=False, index=True)
+    user_choice = Column(String(255), nullable=False, index=True)
+    is_correct = Column(Boolean, default=False, nullable=False)
+    explanation_vi = Column(Text, nullable=False)
+    why_correct = Column(Text, nullable=True)
+    why_trap = Column(Text, nullable=True)
+    key_vocabulary = Column(JSON, nullable=True)
+    strategy_tips = Column(Text, nullable=True)
+    created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
+
+    __table_args__ = (
+        UniqueConstraint("lesson_id", "question_id", "user_choice", name="uq_ai_explanation_choice"),
+    )
+
+    def __repr__(self):
+        return f"<AiExplanation id={self.id} lesson={self.lesson_id} q={self.question_id}>"
+
+
+class WritingFeedback(Base):
+    """
+    Bảng lưu trữ phản hồi chi tiết bài viết IELTS Writing sinh bởi Qwen 2.5 7B.
+    Khóa ngoại practice_history_id kiểu BigInteger khớp chính xác với practice_history.id trên Supabase PostgreSQL.
+    """
+    __tablename__ = "writing_feedback"
+
+    id = Column(UniversalUUID, primary_key=True, default=uuid.uuid4)
+    practice_history_id = Column(BigInteger, ForeignKey("practice_history.id", ondelete="CASCADE"), nullable=True, index=True)
+    user_id = Column(UniversalUUID, nullable=True, index=True)
+    lesson_id = Column(String(50), nullable=False, index=True)
+    overall_band = Column(String(20), nullable=False)
+    
+    # 4 Tiêu chí IELTS Writing
+    task_response_band = Column(Float, nullable=True)
+    task_response_comment = Column(Text, nullable=True)
+    coherence_band = Column(Float, nullable=True)
+    coherence_comment = Column(Text, nullable=True)
+    lexical_band = Column(Float, nullable=True)
+    lexical_comment = Column(Text, nullable=True)
+    grammar_band = Column(Float, nullable=True)
+    grammar_comment = Column(Text, nullable=True)
+
+    # Danh sách lỗi đã kiểm tra so khớp quote (Chống Hallucination)
+    errors_json = Column(JSON, nullable=True)
+    strengths = Column(JSON, nullable=True)
+    improvements = Column(JSON, nullable=True)
+    improved_paragraph = Column(Text, nullable=True)
+    ai_used = Column(Boolean, default=True, nullable=False)
+    created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
+
+    def __repr__(self):
+        return f"<WritingFeedback id={self.id} band={self.overall_band}>"
+

@@ -9,6 +9,7 @@ import '../../../data/datasources/api_service.dart';
 import '../../../data/models/vocabulary_item_model.dart';
 import '../../auth/providers/auth_provider.dart';
 import 'camera_scan_screen.dart';
+import 'vocabulary_learning_screen.dart';
 import '../widgets/saved_vocabulary_detail_bottom_sheet.dart';
 
 /// Màn hình Sổ tay từ vựng nội bộ (Local Vocabulary Notebook) của Học viên.
@@ -241,6 +242,18 @@ class _VocabularyNotebookScreenState extends State<VocabularyNotebookScreen> {
             tooltip: 'Làm mới',
             icon: const Icon(Icons.refresh_rounded, color: AppColors.primary),
             onPressed: _loadWords,
+          ),
+          IconButton(
+            tooltip: 'Học Từ Vựng 5 Cấp Độ (AI Qwen 2.5)',
+            icon: const Icon(Icons.auto_awesome_rounded, color: AppColors.primary),
+            onPressed: () {
+              Navigator.push(
+                context,
+                MaterialPageRoute(
+                  builder: (_) => const VocabularyLearningScreen(),
+                ),
+              ).then((_) => _loadWords());
+            },
           ),
         ],
       ),
@@ -643,46 +656,54 @@ class _VocabularyNotebookScreenState extends State<VocabularyNotebookScreen> {
     );
   }
 
-  /// Trạng thái khi chưa lưu từ nào
+  /// Trạng thái khi chưa lưu từ nào hoặc tìm kiếm không thấy
   Widget _buildEmptyState() {
+    final query = _searchController.text.trim();
+    final isSearching = query.isNotEmpty;
+
     return Center(
-      child: Padding(
-        padding: const EdgeInsets.all(32),
+      child: SingleChildScrollView(
+        physics: const BouncingScrollPhysics(),
+        padding: const EdgeInsets.symmetric(horizontal: 28, vertical: 20),
         child: Column(
           mainAxisAlignment: MainAxisAlignment.center,
+          mainAxisSize: MainAxisSize.min,
           children: [
             Container(
-              padding: const EdgeInsets.all(24),
+              padding: const EdgeInsets.all(20),
               decoration: BoxDecoration(
                 color: AppColors.primary.withValues(alpha: 0.1),
                 shape: BoxShape.circle,
               ),
-              child: const Icon(
-                Icons.menu_book_rounded,
-                size: 64,
+              child: Icon(
+                isSearching ? Icons.search_off_rounded : Icons.menu_book_rounded,
+                size: 52,
                 color: AppColors.primary,
               ),
             ),
-            const SizedBox(height: 20),
-            const Text(
-              'Sổ tay của bạn đang trống!',
-              style: TextStyle(
-                fontSize: 20,
+            const SizedBox(height: 16),
+            Text(
+              isSearching ? 'Không tìm thấy kết quả!' : 'Sổ tay của bạn đang trống!',
+              style: const TextStyle(
+                fontSize: 18,
                 fontWeight: FontWeight.bold,
                 color: AppColors.navy,
               ),
+              textAlign: TextAlign.center,
             ),
             const SizedBox(height: 8),
             Text(
-              'Hãy mở Camera Quét AI để nhận diện các đồ vật xung quanh bạn và lưu lại các từ vựng IELTS Band 7.0 - 8.5.',
+              isSearching
+                  ? 'Không tìm thấy từ vựng nào khớp với "$query".\nHãy thử quét đồ vật này bằng Camera AI để thêm vào sổ tay!'
+                  : 'Hãy mở Camera Quét AI để nhận diện các đồ vật xung quanh bạn và lưu lại các từ vựng IELTS Band 7.0 - 8.5.',
               textAlign: TextAlign.center,
               style: TextStyle(
-                fontSize: 14,
+                fontSize: 13.5,
                 color: Colors.grey[600],
-                height: 1.5,
+                height: 1.4,
               ),
             ),
-            const SizedBox(height: 24),
+            const SizedBox(height: 20),
             ElevatedButton.icon(
               onPressed: () {
                 Navigator.push(
@@ -693,7 +714,7 @@ class _VocabularyNotebookScreenState extends State<VocabularyNotebookScreen> {
               icon: const Icon(Icons.camera_alt_rounded),
               label: const Text('BẮT ĐẦU QUÉT AI NGAY'),
               style: ElevatedButton.styleFrom(
-                padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 14),
+                padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 12),
               ),
             ),
           ],
@@ -701,4 +722,5 @@ class _VocabularyNotebookScreenState extends State<VocabularyNotebookScreen> {
       ),
     );
   }
+
 }

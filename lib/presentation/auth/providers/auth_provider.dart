@@ -112,6 +112,83 @@ class AuthProvider extends ChangeNotifier {
     }
   }
 
+  /// Gửi mã OTP xác thực tới Email (type: 'register' hoặc 'login')
+  Future<String?> sendOtp(String email, {String type = 'register'}) async {
+    _setLoading(true);
+    try {
+      await ApiService.instance.sendOtp(email: email, type: type);
+      return null; // Thành công
+    } catch (e) {
+      return e.toString().replaceAll('Exception: ', '');
+    } finally {
+      _setLoading(false);
+    }
+  }
+
+  /// Xác thực OTP & Đăng ký tài khoản học viên
+  Future<String?> registerWithOtp({
+    required String email,
+    required String otp,
+    required String username,
+    required String password,
+  }) async {
+    _setLoading(true);
+    try {
+      final res = await ApiService.instance.registerVerifyOtp(
+        email: email,
+        otp: otp,
+        username: username,
+        password: password,
+      );
+      final token = res['token'] as String;
+      final user = res['user'] as UserModel;
+
+      final prefs = await SharedPreferences.getInstance();
+      await prefs.setString('access_token', token);
+      if (user.id != null) {
+        await prefs.setInt('userId', user.id!);
+      }
+
+      _currentUser = user;
+      notifyListeners();
+      return null;
+    } catch (e) {
+      return e.toString().replaceAll('Exception: ', '');
+    } finally {
+      _setLoading(false);
+    }
+  }
+
+  /// Đăng nhập bằng Email OTP (Passwordless)
+  Future<String?> loginWithOtp({
+    required String email,
+    required String otp,
+  }) async {
+    _setLoading(true);
+    try {
+      final res = await ApiService.instance.loginWithOtp(
+        email: email,
+        otp: otp,
+      );
+      final token = res['token'] as String;
+      final user = res['user'] as UserModel;
+
+      final prefs = await SharedPreferences.getInstance();
+      await prefs.setString('access_token', token);
+      if (user.id != null) {
+        await prefs.setInt('userId', user.id!);
+      }
+
+      _currentUser = user;
+      notifyListeners();
+      return null;
+    } catch (e) {
+      return e.toString().replaceAll('Exception: ', '');
+    } finally {
+      _setLoading(false);
+    }
+  }
+
   Future<String?> loginWithFace({
     required String imageBase64,
     required String nonce,

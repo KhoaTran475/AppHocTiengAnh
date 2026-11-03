@@ -3,8 +3,8 @@ import 'package:flutter/foundation.dart';
 
 /// Quản lý toàn bộ URLs & Endpoints kết nối tới FastAPI Backend
 class ApiEndpoints {
-  /// Địa chỉ IP LAN mặc định của máy tính chạy server (192.168.1.54)
-  static const String serverHost = '192.168.1.54';
+  /// Địa chỉ IP LAN mặc định của máy tính chạy server (192.168.1.65)
+  static const String serverHost = '192.168.1.65';
 
   /// Base URL thông minh:
   /// - Android Thiết bị thật hoặc Wi-Fi: 192.168.1.50:8000
@@ -25,6 +25,9 @@ class ApiEndpoints {
   // --- Auth & Users ---
   static String get login => '$baseUrl/auth/login';
   static String get register => '$baseUrl/auth/register';
+  static String get sendOtp => '$baseUrl/auth/send-otp';
+  static String get registerVerifyOtp => '$baseUrl/auth/register-verify-otp';
+  static String get loginOtp => '$baseUrl/auth/login-otp';
   static String get me => '$baseUrl/auth/me';
   static String get users => '$baseUrl/users/';
 
@@ -37,6 +40,8 @@ class ApiEndpoints {
 
   // --- AI Vision ---
   static String get detect => '$baseUrl/vision/detect';
+  static String get deepScan => '$baseUrl/vision/deep-scan';
+
 
   // --- Vocabulary & Mappings ---
   static String get mappings => '$baseUrl/vocabulary/mappings';
@@ -44,6 +49,17 @@ class ApiEndpoints {
   static String mappingById(int id) => '$baseUrl/vocabulary/mappings/$id';
   static String get resetMappings => '$baseUrl/vocabulary/mappings/reset';
   static String get lookup => '$baseUrl/vocabulary/lookup';
+
+  // --- Học Từ Vựng Cơ Bản -> Nâng Cao (Ollama Qwen 2.5 Local) ---
+  static String get vocabLearningStatus => '$baseUrl/vocabulary/learning/status';
+  static String get vocabLearningLevels => '$baseUrl/vocabulary/learning/levels';
+  static String get vocabLearningCards => '$baseUrl/vocabulary/learning/cards';
+  static String get vocabLearningGenerate => '$baseUrl/vocabulary/learning/generate';
+  static String get vocabLearningEvaluateSentence => '$baseUrl/vocabulary/learning/evaluate-sentence';
+  static String get vocabLearningMastery => '$baseUrl/vocabulary/learning/mastery';
+  static String get vocabLearningQuiz => '$baseUrl/vocabulary/learning/quiz';
+  static String get vocabLearningSubmitQuiz => '$baseUrl/vocabulary/learning/submit-quiz';
+  static String get vocabLearningConfig => '$baseUrl/vocabulary/learning/config';
 
   // --- Sổ tay từ vựng ---
   static String get notebook => '$baseUrl/notebook/';
@@ -54,9 +70,13 @@ class ApiEndpoints {
   static String skillLessons(String skill) => '$baseUrl/skills/$skill/lessons';
   static String lessonDetail(String id) => '$baseUrl/skills/lessons/$id';
   static String get submitTest => '$baseUrl/skills/submit';
+  static String get explainAnswer => '$baseUrl/skills/explain';
   static String get history => '$baseUrl/skills/history';
   static String skillProgress(String skill) => '$baseUrl/skills/$skill/progress';
   static String get listeningProgress => skillProgress('listening');
+
+  // --- Lịch sử Chấm điểm AI Qwen (Học viên) ---
+  static String get aiGradingMyHistory => '$baseUrl/ai-grading/my-history';
 
   // --- Admin ---
   static String get adminKpis => '$baseUrl/admin/kpis';

@@ -14,14 +14,23 @@ def get_user_by_username(db: Session, username: str) -> Optional[User]:
     return db.query(User).filter(User.username == username.strip().lower()).first()
 
 
+def get_user_by_email(db: Session, email: str) -> Optional[User]:
+    """Tìm user theo email đã chuẩn hóa (lowercase, trim)."""
+    if not email:
+        return None
+    return db.query(User).filter(User.email == email.strip().lower()).first()
+
+
 def get_user_by_id(db: Session, user_id: int) -> Optional[User]:
     """Tìm user theo ID."""
     return db.query(User).filter(User.id == user_id).first()
 
 
-def authenticate_user(db: Session, username: str, password: str) -> Optional[User]:
-    """Xác thực tài khoản và mật khẩu."""
-    user = get_user_by_username(db, username)
+def authenticate_user(db: Session, username_or_email: str, password: str) -> Optional[User]:
+    """Xác thực tài khoản bằng username hoặc email và mật khẩu."""
+    user = get_user_by_username(db, username_or_email)
+    if not user and "@" in username_or_email:
+        user = get_user_by_email(db, username_or_email)
     if not user:
         return None
     if not verify_password(password, user.hashed_password):
@@ -44,14 +53,25 @@ def sync_user_to_supabase(username: str, role: str) -> Optional[str]:
     return None
 
 
-def create_user(db: Session, user_in: UserCreate, sync_supabase: bool = True) -> User:
+def create_user(
+    db: Session, 
+    user_in: UserCreate, 
+    sync_supabase: bool = True,
+    is_email_verified: bool = False,
+) -> User:
     """Tạo mới một người dùng và lưu vào database."""
     normalized_username = user_in.username.strip().lower()
     
-    # Kiểm tra tồn tại
+    # Kiểm tra tồn tại username
     existing = get_user_by_username(db, normalized_username)
     if existing:
         raise ValueError("Tên đăng nhập đã tồn tại trong hệ thống")
+
+    clean_email = user_in.email.strip().lower() if user_in.email else None
+    if clean_email:
+        existing_email = get_user_by_email(db, clean_email)
+        if existing_email:
+            raise ValueError("Email này đã được đăng ký trong hệ thống")
 
     supabase_uuid = None
     if sync_supabase:
@@ -61,12 +81,14 @@ def create_user(db: Session, user_in: UserCreate, sync_supabase: bool = True) ->
         username=normalized_username,
         hashed_password=get_password_hash(user_in.password),
         role=user_in.role,
+        email=clean_email,
+        is_email_verified=is_email_verified,
         supabase_uuid=supabase_uuid,
     )
     db.add(db_user)
     db.commit()
     db.refresh(db_user)
-    logger.info(f"Đã tạo user mới: {db_user.username} ({db_user.role})")
+    logger.info(f"Đã tạo user mới: {db_user.username} ({db_user.role}, email={clean_email})")
     return db_user
 
 

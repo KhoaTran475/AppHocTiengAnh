@@ -72,6 +72,8 @@ class SkillSubmissionResponse(BaseModel):
     stars: int
     feedback: Optional[str] = None
     question_results: Optional[List[Dict[str, Any]]] = None
+    ai_used: bool = False
+    writing_feedback: Optional[Dict[str, Any]] = None
 
 
 class PracticeHistoryResponse(BaseModel):
@@ -103,3 +105,24 @@ class ListeningProgressResponse(BaseModel):
 
 # Alias dùng chung cho cả 4 kỹ năng (reading, listening, writing, speaking)
 SkillProgressResponse = ListeningProgressResponse
+
+
+class ExplainAnswerRequest(BaseModel):
+    lesson_id: str
+    question_id: Union[int, str]
+    user_choice: str
+
+
+class ExplainAnswerResponse(BaseModel):
+    lesson_id: str
+    question_id: str
+    user_choice: str
+    is_correct: bool
+    explanation_vi: str
+    why_correct: Optional[str] = None
+    why_trap: Optional[str] = None
+    key_vocabulary: Optional[List[Dict[str, Any]]] = None
+    strategy_tips: Optional[str] = None
+    ai_used: bool = True
+    from_cache: bool = False
+

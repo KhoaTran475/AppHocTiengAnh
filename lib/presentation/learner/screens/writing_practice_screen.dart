@@ -8,6 +8,7 @@ import '../../../data/models/skill_models.dart';
 import '../../../data/repositories/skill_repository.dart';
 import '../../../data/datasources/api_service.dart';
 import '../../auth/providers/auth_provider.dart';
+import '../widgets/dynamic_ielts_chart_widget.dart';
 
 /// Màn hình Luyện thi IELTS Writing chuyên sâu theo cơ chế Vượt ải (Gamified Stages).
 /// Tính năng:
@@ -39,6 +40,11 @@ class _WritingPracticeScreenState extends State<WritingPracticeScreen> {
   // Trạng thái bài nộp
   bool _isSubmitted = false;
   String _estimatedBand = '6.5';
+  bool _isGrading = false;
+  int _gradingSeconds = 0;
+  Timer? _gradingTimer;
+  Map<String, dynamic>? _writingFeedback;
+  bool _aiUsed = false;
 
   // Trạng thái Vượt ải Gamification (Theme Cam / Amber)
   int _highestUnlockedStage = 1;
@@ -140,18 +146,22 @@ class _WritingPracticeScreenState extends State<WritingPracticeScreen> {
   @override
   void dispose() {
     _timer?.cancel();
+    _gradingTimer?.cancel();
     _essayController.dispose();
     super.dispose();
   }
 
   void _switchLesson(WritingLessonModel lesson) {
     _timer?.cancel();
+    _gradingTimer?.cancel();
     setState(() {
       _selectedLesson = lesson;
       _essayController.clear();
       _secondsLeft = lesson.suggestedTimeMinutes * 60;
       _isTimerRunning = false;
       _isSubmitted = false;
+      _isGrading = false;
+      _writingFeedback = null;
     });
   }
 
@@ -272,10 +282,19 @@ class _WritingPracticeScreenState extends State<WritingPracticeScreen> {
       }
     }
 
+    setState(() {
+      _isGrading = true;
+    });
+    _gradingSeconds = 0;
+    _gradingTimer?.cancel();
+    _gradingTimer = Timer.periodic(const Duration(seconds: 1), (timer) {
+      if (mounted) setState(() => _gradingSeconds++);
+    });
+
     final currentUser = context.read<AuthProvider>().currentUser;
     final userId = currentUser?.id ?? 1;
 
-    // 1. Gửi bài tới FastAPI Backend
+    // 1. Gửi bài tới FastAPI Backend (Chấm điểm bằng Qwen 2.5 7B Local)
     try {
       final res = await ApiService.instance.submitTest(
         lessonId: _selectedLesson.id,
@@ -283,15 +302,27 @@ class _WritingPracticeScreenState extends State<WritingPracticeScreen> {
         essayText: _essayController.text,
         taskType: _selectedLesson.taskType == 'Task 1' ? 1 : 2,
       );
-      if (res['band_score'] != null) band = res['band_score'] as String;
+      if (res['band_score'] != null) band = res['band_score'].toString();
       if (res['passed'] != null) isPassed = res['passed'] as bool;
       if (res['stars'] != null) calculatedStars = res['stars'] as int;
-    } catch (_) {}
-
-    setState(() {
-      _estimatedBand = band;
-      _isSubmitted = true;
-    });
+      if (res['writing_feedback'] != null) {
+        _writingFeedback = res['writing_feedback'] as Map<String, dynamic>;
+      }
+      _aiUsed = res['ai_used'] as bool? ?? false;
+    } catch (e) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Thông báo: $e'), backgroundColor: Colors.amber[900]),
+      );
+    } finally {
+      _gradingTimer?.cancel();
+      if (mounted) {
+        setState(() {
+          _isGrading = false;
+          _estimatedBand = band;
+          _isSubmitted = true;
+        });
+      }
+    }
 
     // 2. Ghi nhận tiến độ Vượt ải Writing
     final newlyUnlocked = await SkillProgressService.recordStageResult(
@@ -698,6 +729,12 @@ class _WritingPracticeScreenState extends State<WritingPracticeScreen> {
             ),
             const SizedBox(height: 16),
 
+            // Biểu đồ số liệu IELTS Task 1 (Dynamic Chart / Supabase Image)
+            if (_selectedLesson.chartData != null) ...[
+              DynamicIeltsChartWidget(chartData: _selectedLesson.chartData!),
+              const SizedBox(height: 16),
+            ],
+
             // Bộ đếm thời gian thi thực tế (Timer Bar)
             Container(
               padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
@@ -885,11 +922,23 @@ class _WritingPracticeScreenState extends State<WritingPracticeScreen> {
             ),
             const SizedBox(height: 16),
 
+            // Trạng thái đang chấm điểm AI (Qwen 2.5 7B)
+            if (_isGrading) ...[
+              _buildGradingProgressCard(),
+              const SizedBox(height: 16),
+            ],
+
+            // Bảng điểm chi tiết 4 tiêu chí IELTS sinh bởi AI
+            if (_isSubmitted && _writingFeedback != null) ...[
+              _buildAiWritingScorecard(),
+              const SizedBox(height: 16),
+            ],
+
             // Nút Nộp bài viết
             SizedBox(
               width: double.infinity,
               child: ElevatedButton.icon(
-                onPressed: _submitEssay,
+                onPressed: _isGrading ? null : _submitEssay,
                 style: ElevatedButton.styleFrom(
                   backgroundColor: const Color(0xFFD97706),
                   padding: const EdgeInsets.symmetric(vertical: 14),
@@ -897,11 +946,13 @@ class _WritingPracticeScreenState extends State<WritingPracticeScreen> {
                 ),
                 icon: const Icon(Icons.cloud_upload_rounded, color: Colors.white),
                 label: Text(
-                  _isSubmitted
-                      ? 'LÀM LẠI HOẶC NÂNG ĐIỂM (BAND $_estimatedBand)'
-                      : (((_stageStars[_selectedLesson.stageNumber] ?? 0) > 0)
-                          ? 'NỘP BÀI ĐỂ NÂNG ĐIỂM ẢI ${_selectedLesson.stageNumber}'
-                          : 'NỘP BÀI WRITING & VƯỢT ẢI ${_selectedLesson.stageNumber}'),
+                  _isGrading
+                      ? 'AI ĐANG CHẤM BÀI (${_gradingSeconds}s)...'
+                      : (_isSubmitted
+                          ? 'LÀM LẠI HOẶC NÂNG ĐIỂM (BAND $_estimatedBand)'
+                          : (((_stageStars[_selectedLesson.stageNumber] ?? 0) > 0)
+                              ? 'NỘP BÀI ĐỂ NÂNG ĐIỂM ẢI ${_selectedLesson.stageNumber}'
+                              : 'NỘP BÀI WRITING & VƯỢT ẢI ${_selectedLesson.stageNumber}')),
                   style: const TextStyle(fontSize: 14, fontWeight: FontWeight.bold, color: Colors.white),
                 ),
               ),
@@ -1202,6 +1253,333 @@ class _WritingPracticeScreenState extends State<WritingPracticeScreen> {
               }).toList(),
             ),
           ),
+        ],
+      ),
+    );
+  }
+
+  /// Khung hiển thị tiến trình đang chấm điểm AI với đồng hồ đếm giây (Lưu ý 1)
+  Widget _buildGradingProgressCard() {
+    return Container(
+      padding: const EdgeInsets.all(20),
+      decoration: BoxDecoration(
+        color: const Color(0xFFFFFBEB),
+        borderRadius: BorderRadius.circular(16),
+        border: Border.all(color: const Color(0xFFFDE68A)),
+      ),
+      child: Column(
+        children: [
+          const SizedBox(
+            width: 42,
+            height: 42,
+            child: CircularProgressIndicator(
+              strokeWidth: 3.5,
+              valueColor: AlwaysStoppedAnimation<Color>(Color(0xFFD97706)),
+            ),
+          ),
+          const SizedBox(height: 16),
+          const Text(
+            'Qwen 2.5 7B đang phân tích & chấm bài viết...',
+            style: TextStyle(fontSize: 15, fontWeight: FontWeight.bold, color: AppColors.navy),
+          ),
+          const SizedBox(height: 6),
+          Text(
+            'Đang đối chiếu 4 tiêu chí IELTS, phân tích lỗi ngữ pháp và viết lại đoạn văn (${_gradingSeconds}s)',
+            textAlign: TextAlign.center,
+            style: TextStyle(fontSize: 13, color: Colors.grey[700]),
+          ),
+        ],
+      ),
+    );
+  }
+
+  /// Bảng điểm chi tiết 4 tiêu chí IELTS sinh bởi AI Qwen 2.5 7B kèm phân tích lỗi
+  Widget _buildAiWritingScorecard() {
+    if (_writingFeedback == null) return const SizedBox.shrink();
+    final fb = _writingFeedback!;
+    final taskBand = fb['task_response_band']?.toString() ?? '6.0';
+    final taskComment = fb['task_response_comment'] as String? ?? '';
+    final ccBand = fb['coherence_band']?.toString() ?? '6.0';
+    final ccComment = fb['coherence_comment'] as String? ?? '';
+    final lrBand = fb['lexical_band']?.toString() ?? '6.0';
+    final lrComment = fb['lexical_comment'] as String? ?? '';
+    final grBand = fb['grammar_band']?.toString() ?? '6.0';
+    final grComment = fb['grammar_comment'] as String? ?? '';
+    final errors = fb['errors'] as List<dynamic>? ?? [];
+    final strengths = fb['strengths'] as List<dynamic>? ?? [];
+    final improvements = fb['improvements'] as List<dynamic>? ?? [];
+    final improvedParagraph = fb['improved_paragraph'] as String? ?? '';
+
+    return Container(
+      padding: const EdgeInsets.all(18),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(16),
+        border: Border.all(color: const Color(0xFFD97706).withValues(alpha: 0.3)),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withValues(alpha: 0.04),
+            blurRadius: 10,
+            offset: const Offset(0, 4),
+          ),
+        ],
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          // Header Card
+          Row(
+            children: [
+              Container(
+                padding: const EdgeInsets.all(8),
+                decoration: BoxDecoration(
+                  color: const Color(0xFFD97706).withValues(alpha: 0.12),
+                  borderRadius: BorderRadius.circular(10),
+                ),
+                child: const Icon(Icons.psychology_rounded, color: Color(0xFFD97706), size: 24),
+              ),
+              const SizedBox(width: 12),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    const Text(
+                      'Đánh Giá IELTS Writing (AI)',
+                      style: TextStyle(fontSize: 15, fontWeight: FontWeight.bold, color: AppColors.navy),
+                    ),
+                    Wrap(
+                      crossAxisAlignment: WrapCrossAlignment.center,
+                      children: [
+                        Text(
+                          _aiUsed ? 'Qwen 2.5 7B Local' : 'Chấm điểm cơ bản (Dự phòng)',
+                          style: TextStyle(fontSize: 12, color: Colors.grey[600]),
+                        ),
+                        if (_aiUsed) ...[
+                          const SizedBox(width: 6),
+                          Container(
+                            padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 1.5),
+                            decoration: BoxDecoration(
+                              color: Colors.green.withValues(alpha: 0.1),
+                              borderRadius: BorderRadius.circular(4),
+                            ),
+                            child: const Text('AI Verified', style: TextStyle(fontSize: 10, color: Colors.green, fontWeight: FontWeight.bold)),
+                          ),
+                        ],
+                      ],
+                    ),
+                  ],
+                ),
+              ),
+              Container(
+                padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+                decoration: BoxDecoration(
+                  color: const Color(0xFFD97706),
+                  borderRadius: BorderRadius.circular(10),
+                ),
+                child: Text(
+                  'BAND $_estimatedBand',
+                  style: const TextStyle(fontSize: 14, fontWeight: FontWeight.bold, color: Colors.white),
+                ),
+              ),
+            ],
+          ),
+
+          const SizedBox(height: 16),
+          const Divider(height: 1),
+          const SizedBox(height: 16),
+
+          // 4 Tiêu chí IELTS Writing
+          const Text('ĐÁNH GIÁ 4 TIÊU CHÍ CHUẨN IELTS', style: TextStyle(fontSize: 12, fontWeight: FontWeight.bold, color: Colors.grey)),
+          const SizedBox(height: 10),
+          _buildCriteriaTile('🎯 Task Response / Achievement', taskBand, taskComment, Colors.blue),
+          const SizedBox(height: 8),
+          _buildCriteriaTile('🔗 Coherence & Cohesion', ccBand, ccComment, Colors.teal),
+          const SizedBox(height: 8),
+          _buildCriteriaTile('📚 Lexical Resource', lrBand, lrComment, Colors.purple),
+          const SizedBox(height: 8),
+          _buildCriteriaTile('✍️ Grammatical Range & Accuracy', grBand, grComment, Colors.deepOrange),
+
+          // Danh sách lỗi đã so khớp quote (Chống Hallucination)
+          if (errors.isNotEmpty) ...[
+            const SizedBox(height: 18),
+            Row(
+              children: [
+                const Icon(Icons.spellcheck_rounded, color: Colors.redAccent, size: 20),
+                const SizedBox(width: 8),
+                Expanded(
+                  child: Text(
+                    'Chi tiết lỗi sai trong bài (${errors.length} lỗi đã xác thực)',
+                    style: const TextStyle(fontSize: 13.5, fontWeight: FontWeight.bold, color: Colors.redAccent),
+                  ),
+                ),
+              ],
+            ),
+            const SizedBox(height: 8),
+            ...errors.map((e) {
+              final quote = e['quote'] ?? '';
+              final fix = e['fix'] ?? '';
+              final explain = e['explain_vi'] ?? '';
+              return Container(
+                margin: const EdgeInsets.only(bottom: 8),
+                padding: const EdgeInsets.all(10),
+                decoration: BoxDecoration(
+                  color: Colors.red.withValues(alpha: 0.04),
+                  borderRadius: BorderRadius.circular(10),
+                  border: Border.all(color: Colors.red.withValues(alpha: 0.15)),
+                ),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Row(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        const Text('❌ Cụm từ gốc: ', style: TextStyle(fontSize: 12.5, fontWeight: FontWeight.bold, color: Colors.redAccent)),
+                        Expanded(child: Text('"$quote"', style: const TextStyle(fontSize: 12.5, fontStyle: FontStyle.italic, color: Colors.black87))),
+                      ],
+                    ),
+                    const SizedBox(height: 4),
+                    Row(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        const Text('✅ Sửa thành: ', style: TextStyle(fontSize: 12.5, fontWeight: FontWeight.bold, color: Colors.green)),
+                        Expanded(child: Text(fix.toString(), style: const TextStyle(fontSize: 12.5, fontWeight: FontWeight.w600, color: Colors.green))),
+                      ],
+                    ),
+                    if (explain.toString().isNotEmpty) ...[
+                      const SizedBox(height: 4),
+                      Text('💡 $explain', style: TextStyle(fontSize: 12, color: Colors.grey[800])),
+                    ],
+                  ],
+                ),
+              );
+            }),
+          ],
+
+          // Điểm mạnh & Điểm cần cải thiện
+          if (strengths.isNotEmpty || improvements.isNotEmpty) ...[
+            const SizedBox(height: 16),
+            Container(
+              padding: const EdgeInsets.all(14),
+              decoration: BoxDecoration(
+                color: Colors.grey[50],
+                borderRadius: BorderRadius.circular(12),
+                border: Border.all(color: Colors.grey[200]!),
+              ),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  if (strengths.isNotEmpty) ...[
+                    const Row(
+                      children: [
+                        Icon(Icons.star_rounded, color: Colors.amber, size: 18),
+                        SizedBox(width: 6),
+                        Text('Điểm mạnh nổi bật:', style: TextStyle(fontSize: 13, fontWeight: FontWeight.bold, color: Colors.black87)),
+                      ],
+                    ),
+                    const SizedBox(height: 6),
+                    ...strengths.map((s) => Padding(
+                          padding: const EdgeInsets.only(left: 6, bottom: 4),
+                          child: Text('• $s', style: const TextStyle(fontSize: 12.5, color: Colors.black87)),
+                        )),
+                  ],
+                  if (strengths.isNotEmpty && improvements.isNotEmpty) const Divider(height: 16),
+                  if (improvements.isNotEmpty) ...[
+                    const Row(
+                      children: [
+                        Icon(Icons.lightbulb_outline_rounded, color: Colors.deepOrange, size: 18),
+                        SizedBox(width: 6),
+                        Text('Điểm cần cải thiện:', style: TextStyle(fontSize: 13, fontWeight: FontWeight.bold, color: Colors.black87)),
+                      ],
+                    ),
+                    const SizedBox(height: 6),
+                    ...improvements.map((im) => Padding(
+                          padding: const EdgeInsets.only(left: 6, bottom: 4),
+                          child: Text('• $im', style: const TextStyle(fontSize: 12.5, color: Colors.black87)),
+                        )),
+                  ],
+                ],
+              ),
+            ),
+          ],
+
+          // Đoạn văn viết lại mẫu Band 8.0+
+          if (improvedParagraph.isNotEmpty) ...[
+            const SizedBox(height: 16),
+            Container(
+              padding: const EdgeInsets.all(14),
+              decoration: BoxDecoration(
+                color: Colors.indigo.withValues(alpha: 0.04),
+                borderRadius: BorderRadius.circular(12),
+                border: Border.all(color: Colors.indigo.withValues(alpha: 0.15)),
+              ),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  const Row(
+                    children: [
+                      Icon(Icons.auto_awesome_rounded, color: Colors.indigo, size: 18),
+                      SizedBox(width: 6),
+                      Expanded(
+                        child: Text(
+                          'Gợi ý viết lại nâng Band 8.0+ từ bài của bạn:',
+                          style: TextStyle(fontSize: 13, fontWeight: FontWeight.bold, color: Colors.indigo),
+                        ),
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: 8),
+                  Text(
+                    improvedParagraph,
+                    style: const TextStyle(fontSize: 13, height: 1.45, color: Colors.black87, fontStyle: FontStyle.italic),
+                  ),
+                ],
+              ),
+            ),
+          ],
+        ],
+      ),
+    );
+  }
+
+  Widget _buildCriteriaTile(String title, String band, String comment, Color color) {
+    return Container(
+      padding: const EdgeInsets.all(12),
+      decoration: BoxDecoration(
+        color: color.withValues(alpha: 0.04),
+        borderRadius: BorderRadius.circular(10),
+        border: Border.all(color: color.withValues(alpha: 0.15)),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              Expanded(
+                child: Text(
+                  title,
+                  style: TextStyle(fontSize: 13, fontWeight: FontWeight.bold, color: color),
+                ),
+              ),
+              Container(
+                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
+                decoration: BoxDecoration(
+                  color: color,
+                  borderRadius: BorderRadius.circular(6),
+                ),
+                child: Text(
+                  'Band $band',
+                  style: const TextStyle(fontSize: 11, fontWeight: FontWeight.bold, color: Colors.white),
+                ),
+              ),
+            ],
+          ),
+          if (comment.isNotEmpty) ...[
+            const SizedBox(height: 6),
+            Text(
+              comment,
+              style: const TextStyle(fontSize: 12.5, height: 1.35, color: Colors.black87),
+            ),
+          ],
         ],
       ),
     );

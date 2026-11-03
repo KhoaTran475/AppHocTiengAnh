@@ -1,4 +1,5 @@
 /**
+/**
  * IELTS Vision - Web Admin Portal Client Logic
  * Hoạt động mượt mà trực tiếp trên mọi trình duyệt (Chrome, Edge, Safari, Firefox).
  */
@@ -18,6 +19,24 @@ const state = {
   users: [],
   selectedImportFile: null,
   activeQuestions: [], // Dùng trong modal soạn câu hỏi trắc nghiệm
+  writingChartMode: 'none', // 'image' | 'data' | 'none'
+  vocabConfig: null, // Cấu hình động học từ vựng & AI Qwen
+  savedVocabConfig: null, // Snapshot cấu hình đã lưu trong CSDL
+  availableModels: [], // Danh sách models cài trên Ollama
+  isBackendOnline: false,
+  isOllamaOnline: false,
+  // Quản lý Lịch sử chấm AI Qwen
+  aiLogs: [],
+  aiLogPage: 1,
+  aiLogPageSize: 20,
+  aiLogTotal: 0,
+  aiLogTotalPages: 1,
+  aiLogSelectedFeature: 'all',
+  aiLogSelectedStatus: 'all',
+  aiLogSelectedCache: 'all',
+  aiLogSearchTerm: '',
+  selectedLogIds: new Set(),
+  currentViewingLogId: null,
 };
 
 // ─────────────────────────────────────────────────────────────
@@ -172,6 +191,12 @@ function initEventListeners() {
       document.querySelectorAll('.modal-overlay').forEach(m => m.classList.remove('active'));
     });
   });
+
+  // Tab Vocab & AI Config Event Listeners
+  initVocabConfigEventListeners();
+
+  // Tab AI Grading History Event Listeners
+  initAiGradingEventListeners();
 }
 
 function switchTab(tabId) {
@@ -188,9 +213,17 @@ function switchTab(tabId) {
     'tab-kpis': 'Tổng quan KPIs Hệ thống',
     'tab-skills': 'Quản lý 4 Kỹ Năng & 5 Ải Vượt Bài IELTS',
     'tab-vocab': 'Kho 82 Từ Vựng AI Nhận Diện Vật Thể',
+    'tab-vocab-config': 'Cấu Hình Động Học Từ Vựng & AI Qwen (Web Admin Portal)',
+    'tab-ai-grading': 'Lịch Sử Chấm Điểm & Giải Thích AI Qwen (3 Skills + Từ Vựng)',
     'tab-users': 'Quản lý Người Dùng & Phân Quyền (RBAC)',
   };
   document.getElementById('page-title').textContent = titles[tabId] || 'Quản trị viên';
+
+  if (tabId === 'tab-vocab-config') {
+    loadVocabAiConfig();
+  } else if (tabId === 'tab-ai-grading') {
+    loadAiGradingData();
+  }
 }
 
 function updateStagePillsUI() {
@@ -211,7 +244,7 @@ async function handleLogin(e) {
   errBox.style.display = 'none';
 
   try {
-    const res = await fetch(`${API_BASE}/auth/login`, {
+    const res = await fetch(`${API_BASE}/auth/admin/login`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ username, password }),
@@ -219,7 +252,7 @@ async function handleLogin(e) {
 
     const data = await res.json();
     if (!res.ok) {
-      throw new Error(data.detail || 'Tài khoản hoặc mật khẩu không đúng!');
+      throw new Error(data.detail || 'Tài khoản hoặc mật khẩu Quản trị viên không đúng!');
     }
 
     if (data.user && data.user.role !== 'admin') {
@@ -251,6 +284,8 @@ async function loadAllData() {
     loadSkillLessons(),
     loadVocabMappings(),
     loadUsers(),
+    loadVocabAiConfig(),
+    loadAiGradingData(),
   ]);
 }
 
@@ -357,7 +392,9 @@ function renderSkillLessons() {
       const qList = content.questions || [];
       detailSummary = `Gồm <strong>${qList.length} câu trắc nghiệm</strong>`;
     } else if (state.selectedSkill === 'writing') {
-      detailSummary = `Dạng: <strong>${content.taskType || 'Task 2'}</strong> • Có văn mẫu Band 8.0+`;
+      const chartType = content.chart_data?.type;
+      const chartLabel = chartType ? (chartType === 'image' ? '📸 Ảnh Supabase' : `📊 Biểu đồ ${chartType}`) : '';
+      detailSummary = `Dạng: <strong>${content.taskType || 'Task 2'}</strong> ${chartLabel ? '• ' + chartLabel : ''} • Có văn mẫu Band 8.0+`;
     } else {
       detailSummary = `Part 1 Q&A + Part 2 Cue Card`;
     }
@@ -370,10 +407,10 @@ function renderSkillLessons() {
             <span class="badge-band"><i class="fa-solid fa-star"></i> Target Band ${targetBand}</span>
           </div>
           <div class="lesson-actions">
-            <button class="btn-icon edit" onclick="openLessonModal(${l.id})" title="Chỉnh sửa đề thi">
+            <button class="btn-icon edit" onclick="openLessonModal('${l.id}')" title="Chỉnh sửa đề thi">
               <i class="fa-solid fa-pen-to-square"></i>
             </button>
-            <button class="btn-icon delete" onclick="handleDeleteLesson(${l.id}, '${escapeHtml(l.title || '')}')" title="Xóa đề thi">
+            <button class="btn-icon delete" onclick="handleDeleteLesson('${l.id}')" title="Xóa đề thi">
               <i class="fa-solid fa-trash-can"></i>
             </button>
           </div>
@@ -403,8 +440,11 @@ function openLessonModal(lessonId = null) {
   const form = document.getElementById('lesson-form');
 
   if (lessonId) {
-    const lesson = state.lessons.find(l => l.id === lessonId);
-    if (!lesson) return;
+    const lesson = state.lessons.find(l => String(l.id) === String(lessonId));
+    if (!lesson) {
+      console.warn('Không tìm thấy bài học với ID:', lessonId);
+      return;
+    }
     titleElem.innerHTML = `<i class="fa-solid fa-file-pen"></i> Chỉnh sửa Đề thi & Ải (#${lesson.id})`;
     document.getElementById('lesson-edit-id').value = lesson.id;
     document.getElementById('lesson-skill-type').value = lesson.skill_type || state.selectedSkill;
@@ -502,15 +542,114 @@ function renderDynamicLessonForm(skill, initialLesson = null) {
     `;
     renderQuestionsEditorUI();
   } else if (skill === 'writing') {
+    const chartData = content.chart_data || null;
+    let initialMode = 'none';
+    if (content.taskType === 'Task 1') {
+      if (chartData && chartData.type === 'image') initialMode = 'image';
+      else if (chartData && (chartData.type === 'bar' || chartData.type === 'line')) initialMode = 'data';
+      else initialMode = 'data';
+    }
+    state.writingChartMode = initialMode;
+
     contentContainer.innerHTML = `
       <div class="form-group">
         <label>Dạng bài Writing</label>
-        <select id="writing-task-type" class="form-select">
+        <select id="writing-task-type" class="form-select" onchange="toggleWritingTaskType(this.value)">
           <option value="Task 1" ${content.taskType === 'Task 1' ? 'selected' : ''}>Writing Task 1 (Mô tả biểu đồ / bản đồ / quy trình)</option>
-          <option value="Task 2" ${content.taskType !== 'Task 1' ? 'selected' : ''}>Writing Task 2 (Bài luận Essay 250 từ)</option>
+          <option value="Task 2" ${content.taskType === 'Task 2' || !content.taskType ? 'selected' : ''}>Writing Task 2 (Bài luận Essay 250 từ)</option>
         </select>
       </div>
-      <div class="form-group">
+
+      <!-- KHU VỰC CẤU HÌNH BIỂU ĐỒ TASK 1 -->
+      <div id="writing-task1-chart-section" class="chart-config-container" style="display: ${content.taskType === 'Task 1' ? 'block' : 'none'};">
+        <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 10px;">
+          <label style="font-weight: 800; color: var(--navy); font-size: 13.5px;">
+            <i class="fa-solid fa-chart-column"></i> Cấu hình Biểu đồ Task 1
+          </label>
+          <span style="font-size: 11px; color: var(--muted);"><i class="fa-solid fa-cloud"></i> Lưu trực tiếp vào Supabase Storage</span>
+        </div>
+
+        <!-- Chế độ biểu đồ (Pills) -->
+        <div class="chart-mode-pills">
+          <button type="button" class="chart-mode-pill ${initialMode === 'image' ? 'active' : ''}" data-mode="image" onclick="switchChartMode('image')">
+            <i class="fa-solid fa-cloud-arrow-up"></i> 1. Tải ảnh đề thi (Supabase Storage)
+          </button>
+          <button type="button" class="chart-mode-pill ${initialMode === 'data' ? 'active' : ''}" data-mode="data" onclick="switchChartMode('data')">
+            <i class="fa-solid fa-chart-line"></i> 2. Biểu đồ Số liệu Động (Bar / Line)
+          </button>
+          <button type="button" class="chart-mode-pill ${initialMode === 'none' ? 'active' : ''}" data-mode="none" onclick="switchChartMode('none')">
+            <i class="fa-solid fa-ban"></i> 3. Không dùng biểu đồ
+          </button>
+        </div>
+
+        <!-- PANEL 1: UPLOAD ẢNH SUPABASE STORAGE -->
+        <div id="chart-panel-image" style="display: ${initialMode === 'image' ? 'block' : 'none'};">
+          <input type="file" id="chart-file-input" accept=".png,.jpg,.jpeg,.webp" style="display: none;" onchange="handleChartFileSelect(event)" />
+          <div class="chart-upload-zone" onclick="document.getElementById('chart-file-input').click()">
+            <i class="fa-solid fa-cloud-arrow-up" style="font-size: 28px; color: var(--primary); margin-bottom: 8px;"></i>
+            <div style="font-weight: 700; font-size: 13.5px; color: var(--navy);">Bấm để Chọn ảnh hoặc Kéo thả ảnh vào đây</div>
+            <div style="font-size: 11.5px; color: var(--muted); margin-top: 4px;">Hỗ trợ: .png, .jpg, .webp (Dung lượng &le; 5MB)</div>
+          </div>
+          <div id="chart-upload-status" style="margin-top: 8px; font-size: 12px; font-weight: 600;"></div>
+
+          <div id="chart-preview-container" class="chart-preview-box" style="display: ${chartData?.image_url ? 'flex' : 'none'};">
+            <img id="chart-image-preview" src="${chartData?.image_url || ''}" class="chart-preview-img" alt="Chart Preview" />
+            <div style="flex: 1;">
+              <div style="font-weight: 700; font-size: 12.5px; color: var(--navy); margin-bottom: 4px;">Ảnh biểu đồ hiện tại</div>
+              <input type="text" id="writing-chart-image-url" value="${chartData?.image_url || ''}" placeholder="URL ảnh biểu đồ trên Supabase Storage..." style="font-size: 12px; padding: 6px 10px;" />
+              <div style="margin-top: 6px;">
+                <span id="chart-source-badge" class="badge badge-success" style="font-size: 10.5px;">Cloud: Supabase Storage</span>
+              </div>
+            </div>
+            <button type="button" class="btn-icon delete" onclick="removeChartImage()" title="Xóa ảnh này">
+              <i class="fa-solid fa-trash"></i>
+            </button>
+          </div>
+        </div>
+
+        <!-- PANEL 2: SỐ LIỆU ĐỘNG (BAR / LINE) -->
+        <div id="chart-panel-data" style="display: ${initialMode === 'data' ? 'block' : 'none'};">
+          <div class="form-row">
+            <div class="form-group flex-1">
+              <label>Loại Biểu Đồ</label>
+              <select id="chart-data-type" class="form-select">
+                <option value="bar" ${chartData?.type === 'bar' ? 'selected' : ''}>Biểu đồ Cột (Bar Chart)</option>
+                <option value="line" ${chartData?.type === 'line' ? 'selected' : ''}>Biểu đồ Đường (Line Graph)</option>
+              </select>
+            </div>
+            <div class="form-group flex-1">
+              <label>Đơn vị Trục tung Y</label>
+              <input type="text" id="chart-data-unit" value="${chartData?.unit || '%'}" placeholder="VD: %, TWh, Triệu..." />
+            </div>
+          </div>
+          <div class="form-group">
+            <label>Tiêu đề Biểu Đồ</label>
+            <input type="text" id="chart-data-title" value="${chartData?.title || ''}" placeholder="VD: Internet Access in Households (2015 - 2025)" />
+          </div>
+          <div class="form-group">
+            <label>Mốc Trục Hoành X (Cách nhau bằng dấu phẩy)</label>
+            <input type="text" id="chart-data-categories" value="${(chartData?.categories || ['2015', '2018', '2020', '2025']).join(', ')}" placeholder="VD: 2015, 2018, 2020, 2025" />
+            <small style="color: var(--muted); font-size: 11px;">Mỗi chuỗi số liệu bên dưới bắt buộc phải có số lượng giá trị bằng đúng số mốc này.</small>
+          </div>
+
+          <div style="display: flex; justify-content: space-between; align-items: center; margin: 12px 0 8px 0;">
+            <label style="font-weight: 700; font-size: 12.5px; color: var(--slate);"><i class="fa-solid fa-layer-group"></i> Các Chuỗi Số Liệu (Series)</label>
+            <button type="button" class="btn btn-secondary btn-sm" onclick="addChartSeriesRow()">
+              <i class="fa-solid fa-plus"></i> Thêm Chuỗi
+            </button>
+          </div>
+          <div id="chart-series-list-container">
+            <!-- Dynamic Series Items -->
+          </div>
+        </div>
+
+        <!-- PANEL 3: KHÔNG DÙNG BIỂU ĐỒ -->
+        <div id="chart-panel-none" style="display: ${initialMode === 'none' ? 'block' : 'none'}; padding: 10px; color: var(--muted); font-size: 12.5px;">
+          <i class="fa-solid fa-info-circle"></i> Đề bài này sẽ không hiển thị biểu đồ.
+        </div>
+      </div>
+
+      <div class="form-group" style="margin-top: 14px;">
         <label>Đề bài (Writing Prompt)</label>
         <textarea id="writing-prompt" rows="3" placeholder="Nhập đề bài Writing..." required>${content.prompt || ''}</textarea>
       </div>
@@ -527,6 +666,18 @@ function renderDynamicLessonForm(skill, initialLesson = null) {
         <input type="text" id="writing-vocab" value="${(content.academicVocabulary || []).join(', ')}" placeholder="VD: sustainable, mitigate, pivotal..." />
       </div>
     `;
+
+    // Khởi tạo các hàng series
+    const seriesContainer = document.getElementById('chart-series-list-container');
+    if (seriesContainer) {
+      seriesContainer.innerHTML = '';
+      if (chartData && Array.isArray(chartData.series) && chartData.series.length > 0) {
+        chartData.series.forEach(s => addChartSeriesRow(s.name, s.color, (s.values || []).join(', ')));
+      } else {
+        addChartSeriesRow('Đô thị (Urban)', '#1E3A8A', '65, 75, 82, 92');
+        addChartSeriesRow('Nông thôn (Rural)', '#D97706', '30, 42, 55, 78');
+      }
+    }
   } else if (skill === 'speaking') {
     const p1 = (content.part1Questions && content.part1Questions[0]) || {};
     contentContainer.innerHTML = `
@@ -643,8 +794,147 @@ function saveCurrentQuestionsState() {
   });
 }
 
+// ─────────────────────────────────────────────────────────────
+// CHART CONFIGURATION HELPER FUNCTIONS (TASK 1)
+// ─────────────────────────────────────────────────────────────
+
+window.toggleWritingTaskType = function (taskType) {
+  const chartSection = document.getElementById('writing-task1-chart-section');
+  if (!chartSection) return;
+  if (taskType === 'Task 1') {
+    chartSection.style.display = 'block';
+    if (!state.writingChartMode || state.writingChartMode === 'none') {
+      switchChartMode('data');
+    }
+  } else {
+    chartSection.style.display = 'none';
+  }
+};
+
+window.switchChartMode = function (mode) {
+  state.writingChartMode = mode;
+  document.querySelectorAll('.chart-mode-pill').forEach(btn => {
+    btn.classList.toggle('active', btn.getAttribute('data-mode') === mode);
+  });
+  const pImage = document.getElementById('chart-panel-image');
+  const pData = document.getElementById('chart-panel-data');
+  const pNone = document.getElementById('chart-panel-none');
+  if (pImage) pImage.style.display = mode === 'image' ? 'block' : 'none';
+  if (pData) pData.style.display = mode === 'data' ? 'block' : 'none';
+  if (pNone) pNone.style.display = mode === 'none' ? 'block' : 'none';
+};
+
+window.handleChartFileSelect = function (e) {
+  const file = e.target.files && e.target.files[0];
+  if (file) uploadChartImage(file);
+};
+
+window.uploadChartImage = async function (file) {
+  if (file.size > 5 * 1024 * 1024) {
+    showToast('File ảnh quá lớn! Dung lượng tối đa là 5MB.', 'error');
+    return;
+  }
+  const ext = file.name.split('.').pop().toLowerCase();
+  if (!['png', 'jpg', 'jpeg', 'webp'].includes(ext)) {
+    showToast('Chỉ chấp nhận file ảnh .png, .jpg, .jpeg, .webp!', 'error');
+    return;
+  }
+
+  const formData = new FormData();
+  formData.append('file', file);
+
+  const statusEl = document.getElementById('chart-upload-status');
+  if (statusEl) {
+    statusEl.innerHTML = `<span style="color:var(--primary)"><i class="fa-solid fa-spinner fa-spin"></i> Đang tải lên Supabase Storage...</span>`;
+  }
+
+  try {
+    const res = await fetch(`${API_BASE}/admin/skills/upload-chart`, {
+      method: 'POST',
+      headers: {
+        'Authorization': `Bearer ${state.token}`,
+      },
+      body: formData,
+    });
+
+    if (!res.ok) {
+      const err = await res.json().catch(() => ({}));
+      throw new Error(err.detail || 'Upload thất bại');
+    }
+
+    const data = await res.json();
+    const urlInput = document.getElementById('writing-chart-image-url');
+    if (urlInput) urlInput.value = data.url;
+
+    const previewContainer = document.getElementById('chart-preview-container');
+    const previewImg = document.getElementById('chart-image-preview');
+    const sourceBadge = document.getElementById('chart-source-badge');
+
+    if (previewImg && previewContainer) {
+      previewImg.src = data.url;
+      previewContainer.style.display = 'flex';
+      if (sourceBadge) {
+        sourceBadge.textContent = data.source === 'supabase' ? 'Cloud: Supabase Storage' : 'Local Fallback';
+        sourceBadge.className = data.source === 'supabase' ? 'badge badge-success' : 'badge badge-warning';
+      }
+    }
+
+    if (statusEl) {
+      statusEl.innerHTML = `<span style="color:var(--success)"><i class="fa-solid fa-circle-check"></i> Đã tải ảnh lên thành công!</span>`;
+    }
+    showToast('Đã upload ảnh biểu đồ lên Supabase Storage thành công!', 'success');
+  } catch (err) {
+    if (statusEl) {
+      statusEl.innerHTML = `<span style="color:var(--danger)"><i class="fa-solid fa-triangle-exclamation"></i> Lỗi: ${err.message}</span>`;
+    }
+    showToast(`Lỗi upload ảnh: ${err.message}`, 'error');
+  }
+};
+
+window.removeChartImage = function () {
+  const urlInput = document.getElementById('writing-chart-image-url');
+  if (urlInput) urlInput.value = '';
+  const previewContainer = document.getElementById('chart-preview-container');
+  if (previewContainer) previewContainer.style.display = 'none';
+  const statusEl = document.getElementById('chart-upload-status');
+  if (statusEl) statusEl.innerHTML = '';
+};
+
+window.addChartSeriesRow = function (name = 'Nhóm mới', color = '#1E3A8A', values = '') {
+  const container = document.getElementById('chart-series-list-container');
+  if (!container) return;
+  const row = document.createElement('div');
+  row.className = 'chart-series-row';
+  row.innerHTML = `
+    <div style="flex: 1.2;">
+      <input type="text" class="series-name" value="${escapeHtml(name)}" placeholder="Tên nhóm (VD: Đô thị)" required />
+    </div>
+    <div style="width: 50px;">
+      <input type="color" class="series-color" value="${color}" title="Chọn màu" style="height: 38px; padding: 2px; cursor: pointer;" />
+    </div>
+    <div style="flex: 2;">
+      <input type="text" class="series-values" value="${escapeHtml(values)}" placeholder="Số liệu (VD: 65, 75, 82, 92)" required />
+    </div>
+    <button type="button" class="btn-icon delete" onclick="removeChartSeriesRow(this)" title="Xóa chuỗi này">
+      <i class="fa-solid fa-trash"></i>
+    </button>
+  `;
+  container.appendChild(row);
+};
+
+window.removeChartSeriesRow = function (btn) {
+  const row = btn.closest('.chart-series-row');
+  const container = document.getElementById('chart-series-list-container');
+  if (row && container && container.querySelectorAll('.chart-series-row').length > 1) {
+    row.remove();
+  } else {
+    showToast('Phải giữ lại ít nhất 1 chuỗi số liệu!', 'warning');
+  }
+};
+
 async function handleSaveLesson(e) {
   e.preventDefault();
+  const btn = document.getElementById('btn-save-lesson');
   const editId = document.getElementById('lesson-edit-id').value;
   const skill = document.getElementById('lesson-skill-type').value;
   const stageNumber = parseInt(document.getElementById('lesson-stage-number').value);
@@ -685,6 +975,83 @@ async function handleSaveLesson(e) {
     contentJson.keyOutline = document.getElementById('writing-outline').value.split('\n').map(s => s.trim()).filter(Boolean);
     contentJson.sampleEssay = document.getElementById('writing-sample').value.trim();
     contentJson.academicVocabulary = document.getElementById('writing-vocab').value.split(',').map(s => s.trim()).filter(Boolean);
+
+    // Cấu hình Biểu đồ Task 1 & Validate mảng số liệu
+    if (contentJson.taskType === 'Task 1') {
+      const mode = state.writingChartMode || 'none';
+      if (mode === 'image') {
+        const imgUrl = (document.getElementById('writing-chart-image-url')?.value || '').trim();
+        if (!imgUrl) {
+          showToast('Vui lòng chọn hoặc upload file ảnh biểu đồ cho Task 1!', 'error');
+          btn.disabled = false;
+          btn.innerHTML = `<i class="fa-solid fa-floppy-disk"></i> Lưu Đề Thi & Ải`;
+          return;
+        }
+        contentJson.chart_data = {
+          type: 'image',
+          image_url: imgUrl,
+        };
+      } else if (mode === 'data') {
+        const chartType = document.getElementById('chart-data-type')?.value || 'bar';
+        const chartTitle = (document.getElementById('chart-data-title')?.value || '').trim();
+        const yUnit = (document.getElementById('chart-data-unit')?.value || '').trim() || '%';
+        const categoriesRaw = (document.getElementById('chart-data-categories')?.value || '')
+          .split(',')
+          .map(s => s.trim())
+          .filter(Boolean);
+
+        if (categoriesRaw.length === 0) {
+          showToast('Vui lòng nhập ít nhất 1 mốc danh mục/năm cho trục hoành X!', 'error');
+          btn.disabled = false;
+          btn.innerHTML = `<i class="fa-solid fa-floppy-disk"></i> Lưu Đề Thi & Ải`;
+          return;
+        }
+
+        const seriesElements = document.querySelectorAll('.chart-series-row');
+        const series = [];
+        for (const row of seriesElements) {
+          const name = row.querySelector('.series-name')?.value.trim() || 'Nhóm';
+          const color = row.querySelector('.series-color')?.value || '#1E3A8A';
+          const rawVals = (row.querySelector('.series-values')?.value || '')
+            .split(',')
+            .map(v => parseFloat(v.trim()))
+            .filter(n => !isNaN(n));
+
+          // Validate nghiêm ngặt: values.length == categories.length
+          if (rawVals.length !== categoriesRaw.length) {
+            showToast(`Lỗi số liệu: Chuỗi "${name}" có ${rawVals.length} số, không khớp với ${categoriesRaw.length} mốc danh mục (${categoriesRaw.join(', ')})!`, 'error');
+            btn.disabled = false;
+            btn.innerHTML = `<i class="fa-solid fa-floppy-disk"></i> Lưu Đề Thi & Ải`;
+            return;
+          }
+
+          series.push({
+            name: name,
+            color: color,
+            values: rawVals,
+          });
+        }
+
+        if (series.length === 0) {
+          showToast('Vui lòng tạo ít nhất 1 chuỗi số liệu cho biểu đồ!', 'error');
+          btn.disabled = false;
+          btn.innerHTML = `<i class="fa-solid fa-floppy-disk"></i> Lưu Đề Thi & Ải`;
+          return;
+        }
+
+        contentJson.chart_data = {
+          type: chartType,
+          title: chartTitle,
+          unit: yUnit,
+          categories: categoriesRaw,
+          series: series,
+        };
+      } else {
+        contentJson.chart_data = null;
+      }
+    } else {
+      contentJson.chart_data = null;
+    }
   } else if (skill === 'speaking') {
     contentJson.part1Questions = [{
       question: document.getElementById('speaking-p1-q').value.trim(),
@@ -708,9 +1075,10 @@ async function handleSaveLesson(e) {
     content_json: contentJson,
   };
 
-  const btn = document.getElementById('btn-save-lesson');
-  btn.disabled = true;
-  btn.innerHTML = `<i class="fa-solid fa-spinner fa-spin"></i> Đang lưu...`;
+  if (btn) {
+    btn.disabled = true;
+    btn.innerHTML = `<i class="fa-solid fa-spinner fa-spin"></i> Đang lưu...`;
+  }
 
   try {
     if (editId) {
@@ -737,8 +1105,10 @@ async function handleSaveLesson(e) {
   }
 }
 
-async function handleDeleteLesson(lessonId, lessonTitle) {
-  if (!confirm(`Bạn có chắc muốn xóa đề thi "${lessonTitle}" không? Hành động này không thể hoàn tác.`)) {
+async function handleDeleteLesson(lessonId, lessonTitle = '') {
+  const lesson = state.lessons.find(l => String(l.id) === String(lessonId));
+  const title = lessonTitle || (lesson ? lesson.title : '') || lessonId;
+  if (!confirm(`Bạn có chắc muốn xóa đề thi "${title}" không? Hành động này không thể hoàn tác.`)) {
     return;
   }
 
@@ -978,6 +1348,10 @@ function renderUsersTable() {
     const isCurrent = state.user && state.user.id === u.id;
     const isAdmin = u.role === 'admin';
     const dateStr = u.created_at ? u.created_at.substring(0, 10) : 'N/A';
+    const emailStr = u.email ? escapeHtml(u.email) : '<span style="color: var(--muted); font-style: italic;">Chưa thiết lập</span>';
+    const otpBadge = u.is_email_verified
+      ? '<span style="display: inline-block; margin-left: 6px; font-size: 10px; background: rgba(16, 185, 129, 0.15); color: #10B981; padding: 2px 6px; border-radius: 4px; font-weight: 600;"><i class="fa-solid fa-circle-check"></i> Đã xác thực</span>'
+      : (u.email ? '<span style="display: inline-block; margin-left: 6px; font-size: 10px; background: rgba(245, 158, 11, 0.15); color: #F59E0B; padding: 2px 6px; border-radius: 4px; font-weight: 600;"><i class="fa-solid fa-clock"></i> Chưa xác thực</span>' : '');
 
     return `
       <tr>
@@ -985,6 +1359,9 @@ function renderUsersTable() {
         <td>
           <strong>${escapeHtml(u.username)}</strong>
           ${isCurrent ? `<span style="margin-left: 6px; font-size: 10px; background: var(--primary-light); color: var(--primary); padding: 2px 6px; border-radius: 4px; font-weight: 700;">HIỆN TẠI</span>` : ''}
+        </td>
+        <td>
+          <div>${emailStr} ${otpBadge}</div>
         </td>
         <td>
           <span class="badge-role ${isAdmin ? 'admin' : 'learner'}">
@@ -1069,3 +1446,1680 @@ function escapeHtml(text) {
   };
   return (text || '').replace(/[&<>"']/g, m => map[m]);
 }
+
+// ─────────────────────────────────────────────────────────────
+// PHÂN HỆ QUẢN TRỊ CẤU HÌNH AI & HỌC TỪ VỰNG (TAB 5)
+// ─────────────────────────────────────────────────────────────
+
+function initVocabConfigEventListeners() {
+  // Save Config buttons (top and bottom)
+  const btnSaveTop = document.getElementById('btn-save-vocab-config-top');
+  const btnSaveBottom = document.getElementById('btn-save-vocab-config-bottom');
+  if (btnSaveTop) btnSaveTop.addEventListener('click', saveVocabAiConfig);
+  if (btnSaveBottom) btnSaveBottom.addEventListener('click', saveVocabAiConfig);
+
+  // Reset Buttons (top and bottom)
+  const btnResetTop = document.getElementById('btn-reset-vocab-config-top');
+  const btnResetBottom = document.getElementById('btn-reset-vocab-config');
+  if (btnResetTop) btnResetTop.addEventListener('click', resetVocabAiConfig);
+  if (btnResetBottom) btnResetBottom.addEventListener('click', resetVocabAiConfig);
+
+  // Refresh Models Button
+  const btnRefreshModels = document.getElementById('btn-refresh-models');
+  if (btnRefreshModels) {
+    btnRefreshModels.addEventListener('click', () => fetchOllamaTags(true));
+  }
+
+  // Test Model Benchmark Button
+  const btnTestModel = document.getElementById('btn-test-model');
+  if (btnTestModel) btnTestModel.addEventListener('click', testOllamaModel);
+
+  // Copy JSON Result Button
+  const btnCopyJson = document.getElementById('btn-copy-test-json');
+  if (btnCopyJson) {
+    btnCopyJson.addEventListener('click', () => {
+      const jsonEl = document.getElementById('test-result-json');
+      if (jsonEl && jsonEl.textContent) {
+        navigator.clipboard.writeText(jsonEl.textContent).then(() => {
+          showToast('Đã sao chép phản hồi JSON vào Clipboard!', 'success');
+        }).catch(() => {
+          showToast('Không thể sao chép văn bản!', 'error');
+        });
+      }
+    });
+  }
+
+  // Model Select Change
+  const modelSelect = document.getElementById('config-model-select');
+  if (modelSelect) {
+    modelSelect.addEventListener('change', () => {
+      validateModelSelection();
+      checkFormDirty();
+    });
+  }
+
+  // Live Sliders Event Listeners
+  const tempSlider = document.getElementById('config-temperature');
+  if (tempSlider) {
+    tempSlider.addEventListener('input', (e) => {
+      const val = (parseInt(e.target.value) / 10).toFixed(1);
+      document.getElementById('val-temperature').textContent = val;
+      updatePresetChipsUI('config-temperature', e.target.value);
+      checkFormDirty();
+    });
+  }
+
+  const quizQSlider = document.getElementById('config-quiz-questions');
+  if (quizQSlider) {
+    quizQSlider.addEventListener('input', (e) => {
+      document.getElementById('val-quiz-questions').textContent = `${e.target.value} câu`;
+      updatePresetChipsUI('config-quiz-questions', e.target.value);
+      updateQuizRulePreview();
+      checkFormDirty();
+    });
+  }
+
+  const passSlider = document.getElementById('config-pass-percentage');
+  if (passSlider) {
+    passSlider.addEventListener('input', (e) => {
+      const val = parseInt(e.target.value);
+      document.getElementById('val-pass-percentage').textContent = `${val}%`;
+      updatePresetChipsUI('config-pass-percentage', e.target.value);
+      updateQuizRulePreview();
+
+      // Tự động nâng star1 nếu star1 trước đó đang bằng hoặc nhỏ hơn passRate
+      const star1Input = document.getElementById('config-star1');
+      if (star1Input && parseInt(star1Input.value || 0) < val) {
+        star1Input.value = val;
+      }
+      validateStarThresholds();
+      checkFormDirty();
+    });
+  }
+
+  const genCountSlider = document.getElementById('config-default-gen-count');
+  if (genCountSlider) {
+    genCountSlider.addEventListener('input', (e) => {
+      document.getElementById('val-default-gen-count').textContent = `${e.target.value} từ`;
+      updatePresetChipsUI('config-default-gen-count', e.target.value);
+      checkFormDirty();
+    });
+  }
+
+  // Star Inputs Listeners
+  ['config-star1', 'config-star2', 'config-star3'].forEach(id => {
+    const el = document.getElementById(id);
+    if (el) {
+      el.addEventListener('input', () => {
+        validateStarThresholds();
+        checkFormDirty();
+      });
+    }
+  });
+
+  // Auto-cache Toggle Listener
+  const autoCache = document.getElementById('config-auto-cache');
+  if (autoCache) {
+    autoCache.addEventListener('change', () => {
+      checkFormDirty();
+    });
+  }
+
+  // Preset Chips Click Listeners
+  document.querySelectorAll('.preset-chip').forEach(chip => {
+    chip.addEventListener('click', () => {
+      const sliderId = chip.getAttribute('data-slider');
+      const val = chip.getAttribute('data-val');
+      const slider = document.getElementById(sliderId);
+      if (slider) {
+        slider.value = val;
+        slider.dispatchEvent(new Event('input', { bubbles: true }));
+      }
+    });
+  });
+
+  // Khởi động kiểm tra hệ thống định kỳ (mỗi 25s)
+  checkSystemStatus();
+  setInterval(checkSystemStatus, 25000);
+}
+
+function updateRangeFill(slider) {
+  if (!slider) return;
+  const min = parseFloat(slider.min || 0);
+  const max = parseFloat(slider.max || 100);
+  const pct = max > min ? ((parseFloat(slider.value) - min) / (max - min)) * 100 : 0;
+  slider.style.setProperty('--fill', `${pct}%`);
+}
+
+// Tô màu phần track đã chọn của mọi thanh trượt
+document.addEventListener('input', (e) => {
+  if (e.target && e.target.classList && e.target.classList.contains('custom-styled-range')) {
+    updateRangeFill(e.target);
+  }
+});
+document.addEventListener('DOMContentLoaded', () => {
+  document.querySelectorAll('.custom-styled-range').forEach(updateRangeFill);
+});
+
+function updatePresetChipsUI(sliderId, activeVal) {
+  updateRangeFill(document.getElementById(sliderId));
+  document.querySelectorAll(`.preset-chip[data-slider="${sliderId}"]`).forEach(chip => {
+    const chipVal = chip.getAttribute('data-val');
+    chip.classList.toggle('active', chipVal == activeVal);
+  });
+}
+
+function updateQuizRulePreview() {
+  const questions = parseInt(document.getElementById('config-quiz-questions')?.value || 5);
+  const passRate = parseInt(document.getElementById('config-pass-percentage')?.value || 60);
+  const minRequired = Math.max(1, Math.ceil(questions * (passRate / 100)));
+
+  const preview = document.getElementById('quiz-rule-preview');
+  if (preview) {
+    preview.innerHTML = `Học viên cần đạt tối thiểu <strong>${minRequired} / ${questions} câu</strong> (${passRate}%) để vượt qua bài kiểm tra và mở khóa Cấp độ tiếp theo.`;
+  }
+}
+
+/**
+ * Kiểm tra trạng thái Backend (:8000) và Ollama (:11434)
+ */
+async function checkSystemStatus() {
+  // 1. Kiểm tra Backend :8000 qua /api/health
+  const backendChip = document.getElementById('topbar-backend-status');
+  try {
+    const res = await fetch(`${window.location.origin}/api/health`, { method: 'GET', cache: 'no-cache' });
+    if (res.ok) {
+      state.isBackendOnline = true;
+      if (backendChip) {
+        backendChip.className = 'status-chip online';
+        backendChip.innerHTML = '<span class="status-dot-pulse green"></span><span class="chip-text">Backend Online (:8000)</span>';
+      }
+    } else {
+      throw new Error(`HTTP ${res.status}`);
+    }
+  } catch (err) {
+    // Fallback thử /health
+    try {
+      const res2 = await fetch(`${window.location.origin}/health`, { method: 'GET', cache: 'no-cache' });
+      if (res2.ok) {
+        state.isBackendOnline = true;
+        if (backendChip) {
+          backendChip.className = 'status-chip online';
+          backendChip.innerHTML = '<span class="status-dot-pulse green"></span><span class="chip-text">Backend Online (:8000)</span>';
+        }
+      } else {
+        throw new Error();
+      }
+    } catch {
+      state.isBackendOnline = false;
+      if (backendChip) {
+        backendChip.className = 'status-chip offline';
+        backendChip.innerHTML = '<span class="status-dot-pulse red"></span><span class="chip-text">Backend Offline</span>';
+      }
+    }
+  }
+
+  // 2. Kiểm tra Ollama :11434 qua /api/tags
+  await fetchOllamaTags(false);
+}
+
+/**
+ * Gọi GET /api/tags để cập nhật danh sách model Ollama
+ */
+async function fetchOllamaTags(showToastOnManual = false) {
+  const ollamaChip = document.getElementById('topbar-ollama-status');
+  const statusBadge = document.getElementById('ollama-status-badge');
+  const statusText = document.getElementById('ollama-status-text');
+  const modelSelect = document.getElementById('config-model-select');
+  const modelHint = document.getElementById('config-model-hint');
+  const modelCountTag = document.getElementById('model-count-tag');
+  const refreshBtn = document.getElementById('btn-refresh-models');
+
+  if (refreshBtn && showToastOnManual) {
+    refreshBtn.classList.add('fa-spin');
+  }
+
+  let models = [];
+  let isOnline = false;
+
+  // Thử 1: Gọi proxy backend /api/tags
+  try {
+    const res = await fetch(`${window.location.origin}/api/tags`, { method: 'GET', cache: 'no-cache' });
+    if (res.ok) {
+      const data = await res.json();
+      if (data && data.models) {
+        models = data.models.map(m => (typeof m === 'string' ? m : (m.name || m.model || ''))).filter(Boolean);
+        isOnline = true;
+      }
+    }
+  } catch (e) {
+    console.debug('Không thể kết nối /api/tags:', e);
+  }
+
+  // Thử 2: Nếu chưa được, gọi /api/v1/admin/tags
+  if (!isOnline && state.token) {
+    try {
+      const data = await apiRequest('/admin/tags');
+      if (data && data.models) {
+        models = data.models.map(m => (typeof m === 'string' ? m : (m.name || m.model || ''))).filter(Boolean);
+        isOnline = Boolean(data.is_online);
+      }
+    } catch (e) {
+      console.debug('Không thể kết nối /admin/tags:', e);
+    }
+  }
+
+  // Thử 3: Thử trực tiếp localhost:11434 nếu đang chạy client local
+  if (!isOnline) {
+    try {
+      const res = await fetch('http://localhost:11434/api/tags', { method: 'GET', cache: 'no-cache' });
+      if (res.ok) {
+        const data = await res.json();
+        if (data && data.models) {
+          models = data.models.map(m => m.name || m.model).filter(Boolean);
+          isOnline = true;
+        }
+      }
+    } catch (e) {
+      console.debug('Direct localhost:11434 tags unreachable:', e);
+    }
+  }
+
+  state.isOllamaOnline = isOnline;
+  state.availableModels = models;
+
+  // Cập nhật UI Topbar Ollama status
+  if (ollamaChip) {
+    if (isOnline) {
+      ollamaChip.className = 'status-chip online';
+      ollamaChip.innerHTML = `<span class="status-dot-pulse green"></span><span class="chip-text">Ollama Online (${models.length} models)</span>`;
+    } else {
+      ollamaChip.className = 'status-chip offline';
+      ollamaChip.innerHTML = '<span class="status-dot-pulse red"></span><span class="chip-text">Ollama Offline (:11434)</span>';
+    }
+  }
+
+  // Cập nhật Card 1 Status Badge
+  if (statusBadge && statusText) {
+    if (isOnline) {
+      statusBadge.className = 'status-indicator-badge online';
+      statusText.textContent = `Trực tuyến (${models.length} models)`;
+      if (modelHint) {
+        modelHint.innerHTML = `<span class="text-success"><i class="fa-solid fa-check"></i> Đã kết nối Ollama local (:11434). Tìm thấy ${models.length} mô hình.</span>`;
+      }
+    } else {
+      statusBadge.className = 'status-indicator-badge offline';
+      statusText.textContent = 'Ngoại tuyến (11434)';
+      if (modelHint) {
+        modelHint.innerHTML = `<span class="text-danger"><i class="fa-solid fa-triangle-exclamation"></i> Không thể kết nối Ollama tại port 11434. Vui lòng bật Ollama Desktop.</span>`;
+      }
+    }
+  }
+
+  if (modelCountTag) {
+    modelCountTag.textContent = `${models.length} models`;
+  }
+
+  // Cập nhật dropdown model nếu có danh sách
+  if (modelSelect && models.length > 0) {
+    const currentVal = modelSelect.value || (state.vocabConfig?.active_model) || 'qwen2.5:7b';
+    modelSelect.innerHTML = '';
+    models.forEach(m => {
+      const opt = document.createElement('option');
+      opt.value = m;
+      opt.textContent = m;
+      if (m === currentVal) opt.selected = true;
+      modelSelect.appendChild(opt);
+    });
+
+    // Nếu model hiện tại không nằm trong danh sách models của Ollama, giữ lại nhưng đánh dấu
+    if (!models.includes(currentVal)) {
+      const opt = document.createElement('option');
+      opt.value = currentVal;
+      opt.textContent = `${currentVal} (Không có trên Ollama)`;
+      opt.selected = true;
+      modelSelect.insertBefore(opt, modelSelect.firstChild);
+    }
+  }
+
+  // Validate model đã chọn
+  validateModelSelection();
+
+  if (refreshBtn) {
+    refreshBtn.classList.remove('fa-spin');
+  }
+
+  if (showToastOnManual) {
+    if (isOnline) {
+      showToast(`Đã quét Ollama thành công: tìm thấy ${models.length} mô hình!`, 'success');
+    } else {
+      showToast('Không thể kết nối tới Ollama (:11434). Kiểm tra lại tiến trình Ollama!', 'error');
+    }
+  }
+}
+
+/**
+ * Validate model đã lưu/chọn với danh sách trên Ollama
+ */
+function validateModelSelection() {
+  const modelSelect = document.getElementById('config-model-select');
+  const alertBox = document.getElementById('model-warning-alert');
+  const alertText = document.getElementById('model-warning-text');
+  const btnSaveTop = document.getElementById('btn-save-vocab-config-top');
+  const btnSaveBottom = document.getElementById('btn-save-vocab-config-bottom');
+
+  if (!modelSelect) return true;
+  const currentModel = modelSelect.value;
+
+  if (state.availableModels.length > 0 && !state.availableModels.includes(currentModel)) {
+    if (alertBox) {
+      alertBox.style.display = 'flex';
+      if (alertText) {
+        alertText.textContent = `Mô hình "${currentModel}" trong cấu hình không tìm thấy trên Ollama. Vui lòng chọn mô hình đã cài đặt bên dưới trước khi lưu.`;
+      }
+    }
+    if (btnSaveTop) btnSaveTop.disabled = true;
+    if (btnSaveBottom) btnSaveBottom.disabled = true;
+    return false;
+  } else {
+    if (alertBox) alertBox.style.display = 'none';
+    // Chỉ kích hoạt lại nút lưu nếu star thresholds cũng hợp lệ
+    const starsValid = validateStarThresholds(false);
+    if (starsValid) {
+      if (btnSaveTop) btnSaveTop.disabled = false;
+      if (btnSaveBottom) btnSaveBottom.disabled = false;
+    }
+    return true;
+  }
+}
+
+/**
+ * Validate mốc xếp hạng Sao (0 <= star1 <= star2 <= star3 <= 100, star1 >= pass_percentage)
+ */
+function validateStarThresholds(updateButtons = true) {
+  const star1Input = document.getElementById('config-star1');
+  const star2Input = document.getElementById('config-star2');
+  const star3Input = document.getElementById('config-star3');
+  const passInput = document.getElementById('config-pass-percentage');
+  const alertBox = document.getElementById('star-validation-alert');
+  const alertMsg = document.getElementById('star-validation-msg');
+  const btnSaveTop = document.getElementById('btn-save-vocab-config-top');
+  const btnSaveBottom = document.getElementById('btn-save-vocab-config-bottom');
+
+  if (!star1Input || !star2Input || !star3Input) return true;
+
+  const star1 = parseInt(star1Input.value || 0);
+  const star2 = parseInt(star2Input.value || 0);
+  const star3 = parseInt(star3Input.value || 0);
+  const passRate = parseInt(passInput?.value || 60);
+
+  const card1 = document.getElementById('card-star1');
+  const card2 = document.getElementById('card-star2');
+  const card3 = document.getElementById('card-star3');
+
+  let isValid = true;
+  let reason = '';
+
+  if (star1 < 0 || star1 > 100 || star2 < 0 || star2 > 100 || star3 < 0 || star3 > 100) {
+    isValid = false;
+    reason = 'Mốc sao phải là số nguyên trong khoảng 0% đến 100%!';
+  } else if (star1 < passRate) {
+    isValid = false;
+    reason = `Mốc 1 ⭐ (${star1}%) phải lớn hơn hoặc bằng Tỷ lệ vượt ải (${passRate}%)!`;
+  } else if (star1 > star2 || star2 > star3) {
+    isValid = false;
+    reason = `Thứ tự mốc sao không hợp lệ: Yêu cầu 0 ≤ 1 ⭐ (${star1}%) ≤ 2 ⭐ (${star2}%) ≤ 3 ⭐ (${star3}%) ≤ 100%!`;
+  }
+
+  if (card1) card1.classList.toggle('input-error', !isValid && (star1 < passRate || star1 > star2));
+  if (card2) card2.classList.toggle('input-error', !isValid && (star2 < star1 || star2 > star3));
+  if (card3) card3.classList.toggle('input-error', !isValid && star3 < star2);
+
+  if (!isValid) {
+    if (alertBox) {
+      alertBox.style.display = 'flex';
+      if (alertMsg) alertMsg.textContent = reason;
+    }
+    if (updateButtons) {
+      if (btnSaveTop) btnSaveTop.disabled = true;
+      if (btnSaveBottom) btnSaveBottom.disabled = true;
+    }
+  } else {
+    if (alertBox) alertBox.style.display = 'none';
+    if (updateButtons) {
+      // Chỉ kích hoạt lại nút lưu nếu model cũng hợp lệ
+      const modelValid = validateModelSelection();
+      if (modelValid) {
+        if (btnSaveTop) btnSaveTop.disabled = false;
+        if (btnSaveBottom) btnSaveBottom.disabled = false;
+      }
+    }
+  }
+
+  return isValid;
+}
+
+/**
+ * Kiểm tra xem form hiện tại có khác với cấu hình đã lưu trong CSDL hay không
+ */
+function checkFormDirty() {
+  if (!state.savedVocabConfig) return;
+
+  const saved = state.savedVocabConfig;
+  const currentModel = document.getElementById('config-model-select')?.value || '';
+  const currentTemp = parseFloat(document.getElementById('config-temperature')?.value || 3) / 10.0;
+  const currentQuizQ = parseInt(document.getElementById('config-quiz-questions')?.value || 5);
+  const currentPass = parseInt(document.getElementById('config-pass-percentage')?.value || 60);
+  const currentGen = parseInt(document.getElementById('config-default-gen-count')?.value || 5);
+  const currentAutoCache = Boolean(document.getElementById('config-auto-cache')?.checked);
+  const currentStar1 = parseInt(document.getElementById('config-star1')?.value || 60);
+  const currentStar2 = parseInt(document.getElementById('config-star2')?.value || 80);
+  const currentStar3 = parseInt(document.getElementById('config-star3')?.value || 100);
+
+  const savedTemp = saved.temperature !== undefined ? saved.temperature : 0.3;
+  const savedStars = saved.star_thresholds || { star1: 60, star2: 80, star3: 100 };
+
+  const isDirty = (
+    currentModel !== saved.active_model ||
+    Math.abs(currentTemp - savedTemp) > 0.01 ||
+    currentQuizQ !== saved.quiz_question_count ||
+    currentPass !== saved.pass_percentage ||
+    currentGen !== saved.default_gen_count ||
+    currentAutoCache !== Boolean(saved.auto_cache_enabled) ||
+    currentStar1 !== savedStars.star1 ||
+    currentStar2 !== savedStars.star2 ||
+    currentStar3 !== savedStars.star3
+  );
+
+  updateUnsavedState(isDirty);
+}
+
+function updateUnsavedState(isDirty) {
+  const topbarBadge = document.getElementById('topbar-unsaved-indicator');
+  const headerBadge = document.getElementById('header-unsaved-badge');
+  const footerBadge = document.getElementById('footer-unsaved-badge');
+
+  const displayVal = isDirty ? 'inline-flex' : 'none';
+  if (topbarBadge) topbarBadge.style.display = displayVal;
+  if (headerBadge) headerBadge.style.display = displayVal;
+  if (footerBadge) footerBadge.style.display = displayVal;
+}
+
+/**
+ * Tải cấu hình AI & Học tập từ Backend
+ */
+async function loadVocabAiConfig(showNotification = false) {
+  try {
+    let data;
+    try {
+      data = await apiRequest('/admin/ai-config');
+    } catch {
+      data = await apiRequest('/admin/vocab-config');
+    }
+
+    state.vocabConfig = data;
+    state.savedVocabConfig = JSON.parse(JSON.stringify(data));
+
+    renderVocabAiConfig(data);
+    updateUnsavedState(false);
+
+    if (showNotification) {
+      showToast('Đã làm mới thông tin Model và Cấu hình từ CSDL!', 'success');
+    }
+  } catch (err) {
+    console.error('Lỗi tải cấu hình học từ vựng:', err);
+    if (showNotification) {
+      showToast(`Không thể tải cấu hình AI: ${err.message}`, 'error');
+    }
+  }
+}
+
+/**
+ * Đổ dữ liệu cấu hình vào form
+ */
+function renderVocabAiConfig(cfg) {
+  if (!cfg) return;
+
+  // 1. Ollama Status & Models
+  const modelSelect = document.getElementById('config-model-select');
+  if (cfg.available_models && cfg.available_models.length > 0) {
+    state.availableModels = cfg.available_models;
+    modelSelect.innerHTML = '';
+    cfg.available_models.forEach(m => {
+      const opt = document.createElement('option');
+      opt.value = m;
+      opt.textContent = m;
+      if (m === cfg.active_model) opt.selected = true;
+      modelSelect.appendChild(opt);
+    });
+
+    if (!cfg.available_models.includes(cfg.active_model)) {
+      const opt = document.createElement('option');
+      opt.value = cfg.active_model;
+      opt.textContent = `${cfg.active_model} (Không có trên Ollama)`;
+      opt.selected = true;
+      modelSelect.insertBefore(opt, modelSelect.firstChild);
+    }
+  } else if (modelSelect) {
+    modelSelect.value = cfg.active_model;
+  }
+
+  // 2. Temperature
+  const tempSlider = document.getElementById('config-temperature');
+  const tempVal = document.getElementById('val-temperature');
+  const tempFloat = cfg.temperature !== undefined ? cfg.temperature : 0.3;
+  if (tempSlider) {
+    tempSlider.value = Math.round(tempFloat * 10);
+    updatePresetChipsUI('config-temperature', tempSlider.value);
+  }
+  if (tempVal) tempVal.textContent = tempFloat.toFixed(1);
+
+  // 3. Quiz Settings
+  const quizQSlider = document.getElementById('config-quiz-questions');
+  const quizQVal = document.getElementById('val-quiz-questions');
+  if (quizQSlider) {
+    quizQSlider.value = cfg.quiz_question_count || 5;
+    updatePresetChipsUI('config-quiz-questions', quizQSlider.value);
+  }
+  if (quizQVal) quizQVal.textContent = `${quizQSlider.value} câu`;
+
+  const passSlider = document.getElementById('config-pass-percentage');
+  const passVal = document.getElementById('val-pass-percentage');
+  if (passSlider) {
+    passSlider.value = cfg.pass_percentage || 60;
+    updatePresetChipsUI('config-pass-percentage', passSlider.value);
+  }
+  if (passVal) passVal.textContent = `${passSlider.value}%`;
+
+  updateQuizRulePreview();
+
+  // 4. Star Thresholds
+  const stars = cfg.star_thresholds || { star1: 60, star2: 80, star3: 100 };
+  const star1 = document.getElementById('config-star1');
+  const star2 = document.getElementById('config-star2');
+  const star3 = document.getElementById('config-star3');
+  if (star1) star1.value = stars.star1 !== undefined ? stars.star1 : 60;
+  if (star2) star2.value = stars.star2 !== undefined ? stars.star2 : 80;
+  if (star3) star3.value = stars.star3 !== undefined ? stars.star3 : 100;
+
+  // 5. Vocab Generation Settings
+  const genSlider = document.getElementById('config-default-gen-count');
+  const genVal = document.getElementById('val-default-gen-count');
+  if (genSlider) {
+    genSlider.value = cfg.default_gen_count || 5;
+    updatePresetChipsUI('config-default-gen-count', genSlider.value);
+  }
+  if (genVal) genVal.textContent = `${genSlider.value} từ`;
+
+  const autoCache = document.getElementById('config-auto-cache');
+  if (autoCache) autoCache.checked = Boolean(cfg.auto_cache_enabled);
+
+  // 6. Updated Timestamp
+  updateTimestampUI(cfg.updated_at);
+
+  // Validate ban đầu
+  validateModelSelection();
+  validateStarThresholds();
+}
+
+function updateTimestampUI(timestamp) {
+  const lastUpdated = document.getElementById('config-last-updated');
+  const topbarLastSync = document.getElementById('topbar-last-sync-text');
+
+  if (timestamp) {
+    const dt = new Date(timestamp);
+    const timeFormatted = dt.toLocaleString('vi-VN');
+    if (lastUpdated) lastUpdated.textContent = timeFormatted;
+    if (topbarLastSync) topbarLastSync.textContent = `Cập nhật: ${timeFormatted}`;
+  } else {
+    if (lastUpdated) lastUpdated.textContent = 'Chưa có dữ liệu';
+    if (topbarLastSync) topbarLastSync.textContent = 'Cập nhật: --';
+  }
+}
+
+/**
+ * Lưu cấu hình hệ thống xuống backend qua PUT /api/admin/ai-config
+ */
+async function saveVocabAiConfig() {
+  if (!validateModelSelection()) {
+    showToast('Vui lòng chọn một mô hình hợp lệ đã cài trên Ollama trước khi lưu!', 'error');
+    return;
+  }
+
+  if (!validateStarThresholds()) {
+    showToast('Vui lòng kiểm tra lại mốc xếp hạng Sao cho đúng quy tắc trước khi lưu!', 'error');
+    return;
+  }
+
+  const model = document.getElementById('config-model-select').value;
+  const temp = parseFloat(document.getElementById('config-temperature').value) / 10.0;
+  const quizQuestions = parseInt(document.getElementById('config-quiz-questions').value);
+  const passRate = parseInt(document.getElementById('config-pass-percentage').value);
+  const genCount = parseInt(document.getElementById('config-default-gen-count').value);
+  const autoCache = document.getElementById('config-auto-cache').checked;
+  const star1 = parseInt(document.getElementById('config-star1').value);
+  const star2 = parseInt(document.getElementById('config-star2').value);
+  const star3 = parseInt(document.getElementById('config-star3').value);
+
+  const payload = {
+    active_model: model,
+    temperature: temp,
+    quiz_question_count: quizQuestions,
+    pass_percentage: passRate,
+    default_gen_count: genCount,
+    auto_cache_enabled: autoCache,
+    star_thresholds: {
+      star1: star1,
+      star2: star2,
+      star3: star3,
+    },
+  };
+
+  const btnSaveTop = document.getElementById('btn-save-vocab-config-top');
+  const btnSaveBottom = document.getElementById('btn-save-vocab-config-bottom');
+  const origHtmlTop = btnSaveTop ? btnSaveTop.innerHTML : '';
+  const origHtmlBottom = btnSaveBottom ? btnSaveBottom.innerHTML : '';
+
+  if (btnSaveTop) {
+    btnSaveTop.disabled = true;
+    btnSaveTop.innerHTML = '<i class="fa-solid fa-spinner fa-spin"></i> Đang lưu...';
+  }
+  if (btnSaveBottom) {
+    btnSaveBottom.disabled = true;
+    btnSaveBottom.innerHTML = '<i class="fa-solid fa-spinner fa-spin"></i> Đang lưu...';
+  }
+
+  try {
+    let updated;
+    try {
+      updated = await apiRequest('/admin/ai-config', {
+        method: 'PUT',
+        body: JSON.stringify(payload),
+      });
+    } catch {
+      updated = await apiRequest('/admin/vocab-config', {
+        method: 'PUT',
+        body: JSON.stringify(payload),
+      });
+    }
+
+    state.vocabConfig = updated;
+    state.savedVocabConfig = JSON.parse(JSON.stringify(updated));
+
+    renderVocabAiConfig(updated);
+    updateUnsavedState(false);
+
+    showToast('Đã lưu cấu hình AI & Học tập thành công! Toàn bộ thay đổi được đồng bộ tức thì tới Mobile App.', 'success');
+  } catch (err) {
+    // Nếu lưu lỗi, giữ nguyên dữ liệu trên form và hiển thị lỗi
+    showToast(`Lỗi khi lưu cấu hình: ${err.message}`, 'error');
+  } finally {
+    if (btnSaveTop) {
+      btnSaveTop.disabled = false;
+      btnSaveTop.innerHTML = origHtmlTop;
+    }
+    if (btnSaveBottom) {
+      btnSaveBottom.disabled = false;
+      btnSaveBottom.innerHTML = origHtmlBottom;
+    }
+  }
+}
+
+/**
+ * Khôi phục mặc định (Client-side only)
+ */
+function resetVocabAiConfig() {
+  if (!confirm('Khôi phục toàn bộ các giá trị trên form về mặc định ban đầu? (Dữ liệu chưa ghi vào CSDL cho tới khi bạn bấm "Lưu Cấu Hình Hệ Thống")')) {
+    return;
+  }
+
+  // 1. Model: qwen2.5:7b (hoặc model đầu tiên có trên Ollama)
+  const modelSelect = document.getElementById('config-model-select');
+  if (modelSelect) {
+    if (state.availableModels.includes('qwen2.5:7b')) {
+      modelSelect.value = 'qwen2.5:7b';
+    } else if (state.availableModels.length > 0) {
+      modelSelect.value = state.availableModels[0];
+    } else {
+      modelSelect.value = 'qwen2.5:7b';
+    }
+  }
+
+  // 2. Temperature: 0.3
+  const tempSlider = document.getElementById('config-temperature');
+  if (tempSlider) {
+    tempSlider.value = 3;
+    document.getElementById('val-temperature').textContent = '0.3';
+    updatePresetChipsUI('config-temperature', 3);
+  }
+
+  // 3. Quiz Questions: 5
+  const quizQSlider = document.getElementById('config-quiz-questions');
+  if (quizQSlider) {
+    quizQSlider.value = 5;
+    document.getElementById('val-quiz-questions').textContent = '5 câu';
+    updatePresetChipsUI('config-quiz-questions', 5);
+  }
+
+  // 4. Pass Percentage: 60%
+  const passSlider = document.getElementById('config-pass-percentage');
+  if (passSlider) {
+    passSlider.value = 60;
+    document.getElementById('val-pass-percentage').textContent = '60%';
+    updatePresetChipsUI('config-pass-percentage', 60);
+  }
+
+  // 5. Star Thresholds: 60, 80, 100
+  const star1 = document.getElementById('config-star1');
+  const star2 = document.getElementById('config-star2');
+  const star3 = document.getElementById('config-star3');
+  if (star1) star1.value = 60;
+  if (star2) star2.value = 80;
+  if (star3) star3.value = 100;
+
+  // 6. Gen count: 5
+  const genSlider = document.getElementById('config-default-gen-count');
+  if (genSlider) {
+    genSlider.value = 5;
+    document.getElementById('val-default-gen-count').textContent = '5 từ';
+    updatePresetChipsUI('config-default-gen-count', 5);
+  }
+
+  // 7. Auto cache: true
+  const autoCache = document.getElementById('config-auto-cache');
+  if (autoCache) autoCache.checked = true;
+
+  updateQuizRulePreview();
+  validateModelSelection();
+  validateStarThresholds();
+  checkFormDirty();
+
+  showToast('Đã khôi phục các tham số mặc định trên giao diện! Nhấn "Lưu Cấu Hình Hệ Thống" để áp dụng vào CSDL.', 'info');
+}
+
+/**
+ * Benchmark Test Model (gửi prompt sinh 1 từ JSON, đo ms, timeout 30s)
+ */
+async function testOllamaModel() {
+  const modelSelect = document.getElementById('config-model-select');
+  const modelName = modelSelect ? modelSelect.value : 'qwen2.5:7b';
+  const btn = document.getElementById('btn-test-model');
+  const resultBox = document.getElementById('test-model-result');
+  const resultBadge = document.getElementById('test-result-badge');
+  const resultMsg = document.getElementById('test-result-msg');
+  const resultJson = document.getElementById('test-result-json');
+
+  if (!btn) return;
+  const originalHtml = btn.innerHTML;
+  btn.disabled = true;
+  btn.innerHTML = '<i class="fa-solid fa-spinner fa-spin"></i> Đang test model (tối đa 30s)...';
+
+  // Prompt cố định chuẩn theo yêu cầu
+  const fixedPrompt = 'Generate a JSON object with 1 IELTS vocabulary word containing exact keys: "word", "meaning", "example". Example: {"word": "resilient", "meaning": "kiên cường, có khả năng phục hồi", "example": "She remained resilient in the face of difficulties."}. Output JSON only, no markdown, no other text.';
+
+  try {
+    let res;
+    try {
+      res = await apiRequest('/admin/ai-config/test-model', {
+        method: 'POST',
+        body: JSON.stringify({ model_name: modelName, test_prompt: fixedPrompt }),
+      });
+    } catch {
+      res = await apiRequest('/admin/vocab-config/test-model', {
+        method: 'POST',
+        body: JSON.stringify({ model_name: modelName, test_prompt: fixedPrompt }),
+      });
+    }
+
+    resultBox.style.display = 'block';
+
+    if (res.success) {
+      const latencyClass = res.latency_ms < 3000 ? 'badge-success' : (res.latency_ms < 8000 ? 'badge-warning' : 'badge-danger');
+      resultBadge.className = `latency-badge ${latencyClass}`;
+      resultBadge.textContent = `${res.latency_ms} ms`;
+      resultMsg.className = 'latency-msg text-success font-weight-bold';
+      resultMsg.textContent = res.message;
+
+      // Hiển thị và format JSON
+      let formattedJson = res.sample_response || '';
+      try {
+        const parsed = JSON.parse(formattedJson);
+        formattedJson = JSON.stringify(parsed, null, 2);
+      } catch {
+        // Raw text nếu đã parse rồi
+      }
+      resultJson.textContent = formattedJson || '{"status": "valid"}';
+      showToast(`Model ${modelName} phản hồi hợp lệ trong ${res.latency_ms}ms!`, 'success');
+    } else {
+      resultBadge.className = 'latency-badge badge-danger';
+      resultBadge.textContent = 'Thất bại';
+      resultMsg.className = 'latency-msg text-danger font-weight-bold';
+      resultMsg.textContent = res.message || 'Lỗi xử lý JSON hoặc kết nối';
+      resultJson.textContent = res.sample_response || 'Model không trả về JSON hợp lệ hoặc tiến trình bị ngắt.';
+      showToast(`Test model thất bại: ${res.message}`, 'error');
+    }
+  } catch (err) {
+    resultBox.style.display = 'block';
+    resultBadge.className = 'latency-badge badge-danger';
+    resultBadge.textContent = 'Lỗi kết nối';
+    resultMsg.className = 'latency-msg text-danger font-weight-bold';
+    resultMsg.textContent = err.message || 'Không thể gửi yêu cầu kiểm tra';
+    resultJson.textContent = 'Lỗi khi gửi yêu cầu tới endpoint test-model. Kiểm tra server backend và Ollama.';
+    showToast(`Test model thất bại: ${err.message}`, 'error');
+  } finally {
+    btn.disabled = false;
+    btn.innerHTML = originalHtml;
+  }
+}
+
+
+// Gắn các hàm gọi từ inline onclick vào window để đảm bảo tương thích mọi trình duyệt
+window.openLessonModal = openLessonModal;
+window.handleDeleteLesson = handleDeleteLesson;
+window.addQuestionItem = addQuestionItem;
+window.removeQuestionItem = removeQuestionItem;
+window.openImportModal = openImportModal;
+window.downloadTemplate = downloadTemplate;
+window.speakWord = speakWord;
+window.handleDeleteUser = handleDeleteUser;
+
+// ─────────────────────────────────────────────────────────────
+// PHÂN HỆ QUẢN LÝ LỊCH SỬ CHẤM ĐIỂM & GIẢI THÍCH AI QWEN
+// ─────────────────────────────────────────────────────────────
+
+let aiSearchDebounceTimer = null;
+
+function initAiGradingEventListeners() {
+  // 1. Feature Pills
+  document.querySelectorAll('#ai-feature-pills .ai-pill').forEach(pill => {
+    pill.addEventListener('click', () => {
+      document.querySelectorAll('#ai-feature-pills .ai-pill').forEach(p => p.classList.remove('active'));
+      pill.classList.add('active');
+      state.aiLogSelectedFeature = pill.getAttribute('data-feature') || 'all';
+      state.aiLogPage = 1;
+      loadAiGradingLogs();
+    });
+  });
+
+  // 2. Tìm kiếm (Debounce 350ms)
+  const searchInput = document.getElementById('ai-log-search-input');
+  if (searchInput) {
+    searchInput.addEventListener('input', (e) => {
+      clearTimeout(aiSearchDebounceTimer);
+      aiSearchDebounceTimer = setTimeout(() => {
+        state.aiLogSearchTerm = e.target.value.trim();
+        state.aiLogPage = 1;
+        loadAiGradingLogs();
+      }, 350);
+    });
+  }
+
+  // 3. Bộ lọc trạng thái
+  const statusFilter = document.getElementById('ai-status-filter');
+  if (statusFilter) {
+    statusFilter.addEventListener('change', (e) => {
+      state.aiLogSelectedStatus = e.target.value;
+      state.aiLogPage = 1;
+      loadAiGradingLogs();
+    });
+  }
+
+  // 4. Bộ lọc nguồn (AI suy luận vs Cache)
+  const cacheFilter = document.getElementById('ai-cache-filter');
+  if (cacheFilter) {
+    cacheFilter.addEventListener('change', (e) => {
+      state.aiLogSelectedCache = e.target.value;
+      state.aiLogPage = 1;
+      loadAiGradingLogs();
+    });
+  }
+
+  // 5. Xóa bộ lọc
+  const resetBtn = document.getElementById('btn-reset-ai-filters');
+  if (resetBtn) {
+    resetBtn.addEventListener('click', () => {
+      state.aiLogSelectedFeature = 'all';
+      state.aiLogSelectedStatus = 'all';
+      state.aiLogSelectedCache = 'all';
+      state.aiLogSearchTerm = '';
+      state.aiLogPage = 1;
+
+      document.querySelectorAll('#ai-feature-pills .ai-pill').forEach(p => {
+        p.classList.toggle('active', p.getAttribute('data-feature') === 'all');
+      });
+      if (searchInput) searchInput.value = '';
+      if (statusFilter) statusFilter.value = 'all';
+      if (cacheFilter) cacheFilter.value = 'all';
+
+      loadAiGradingLogs();
+      showToast('Đã xóa toàn bộ bộ lọc lịch sử AI!', 'info');
+    });
+  }
+
+  // 6. Làm mới dữ liệu
+  const refreshBtn = document.getElementById('btn-refresh-ai-logs');
+  if (refreshBtn) {
+    refreshBtn.addEventListener('click', () => {
+      loadAiGradingData();
+      showToast('Đã làm mới lịch sử chấm điểm AI!', 'success');
+    });
+  }
+
+  // 7. Xuất file CSV
+  const exportBtn = document.getElementById('btn-export-ai-logs-csv');
+  if (exportBtn) {
+    exportBtn.addEventListener('click', handleExportAiLogsCsv);
+  }
+
+  // 8. Chọn tất cả checkbox
+  const checkAllBox = document.getElementById('check-all-ai-logs');
+  if (checkAllBox) {
+    checkAllBox.addEventListener('change', (e) => {
+      const isChecked = e.target.checked;
+      document.querySelectorAll('.ai-log-row-check').forEach(cb => {
+        cb.checked = isChecked;
+        const id = cb.getAttribute('data-id');
+        if (isChecked) {
+          state.selectedLogIds.add(id);
+        } else {
+          state.selectedLogIds.delete(id);
+        }
+      });
+      updateBulkDeleteUI();
+    });
+  }
+
+  // 9. Nút xóa hàng loạt
+  const bulkDeleteBtn = document.getElementById('btn-bulk-delete-ai-logs');
+  if (bulkDeleteBtn) {
+    bulkDeleteBtn.addEventListener('click', handleBulkDeleteAiLogs);
+  }
+
+  // 10. Phân trang Prev / Next
+  const prevBtn = document.getElementById('btn-ai-logs-prev');
+  if (prevBtn) {
+    prevBtn.addEventListener('click', () => {
+      if (state.aiLogPage > 1) {
+        state.aiLogPage--;
+        loadAiGradingLogs();
+      }
+    });
+  }
+  const nextBtn = document.getElementById('btn-ai-logs-next');
+  if (nextBtn) {
+    nextBtn.addEventListener('click', () => {
+      if (state.aiLogPage < state.aiLogTotalPages) {
+        state.aiLogPage++;
+        loadAiGradingLogs();
+      }
+    });
+  }
+
+  // 11. Xóa bản ghi trong Modal
+  const deleteThisBtn = document.getElementById('btn-delete-this-log');
+  if (deleteThisBtn) {
+    deleteThisBtn.addEventListener('click', () => {
+      if (state.currentViewingLogId) {
+        handleDeleteAiLog(state.currentViewingLogId, true);
+      }
+    });
+  }
+}
+
+async function loadAiGradingData() {
+  await Promise.all([
+    loadAiGradingStats(),
+    loadAiGradingLogs(),
+  ]);
+}
+
+async function loadAiGradingStats() {
+  try {
+    const stats = await apiRequest('/admin/ai-grading/stats');
+    if (!stats) return;
+
+    // Tổng số request
+    document.getElementById('ai-stat-total').textContent = (stats.total_requests || 0).toLocaleString();
+    const fc = stats.feature_counts || {};
+    document.getElementById('ai-stat-feature-breakdown').textContent = 
+      `Writing: ${fc.writing_grading || 0} · Reading: ${fc.reading_explain || 0} · Listening: ${fc.listening_explain || 0} · Vocab: ${fc.vocab_sentence || 0}`;
+
+    // Tỷ lệ trạng thái
+    const sc = stats.status_counts || {};
+    const successTotal = sc.success || 0;
+    const total = stats.total_requests || 0;
+    const successRate = total > 0 ? Math.round((successTotal / total) * 100) : 100;
+    document.getElementById('ai-stat-status-ratio').textContent = `${successRate}%`;
+    document.getElementById('ai-stat-status-counts').textContent = 
+      `Thành công: ${successTotal} · Fallback: ${sc.fallback || 0} · Lỗi: ${sc.error || 0}`;
+
+    // Độ trễ & Cache
+    document.getElementById('ai-stat-latency').textContent = `${stats.avg_latency_ms || 0} ms`;
+    document.getElementById('ai-stat-cache-rate').textContent = 
+      `Cache Hit: ${stats.cache_hits || 0} (${stats.cache_hit_rate || 0}%)`;
+
+    // Điểm trung bình
+    const writingBand = stats.writing_avg_band ? `Band ${stats.writing_avg_band}` : 'Band --';
+    document.getElementById('ai-stat-avg-score').textContent = writingBand;
+    const vocabScore = stats.vocab_avg_score ? `${stats.vocab_avg_score}/100` : '--/100';
+    document.getElementById('ai-stat-avg-vocab').textContent = `Câu từ vựng: ${vocabScore}`;
+  } catch (err) {
+    console.error('Lỗi tải thống kê AI:', err);
+  }
+}
+
+async function loadAiGradingLogs() {
+  const tbody = document.getElementById('ai-logs-table-body');
+  if (!tbody) return;
+
+  tbody.innerHTML = `
+    <tr>
+      <td colspan="9" class="text-center py-4" style="color: var(--text-muted);">
+        <i class="fa-solid fa-spinner fa-spin"></i> Đang tải dữ liệu...
+      </td>
+    </tr>
+  `;
+
+  try {
+    const params = new URLSearchParams({
+      page: state.aiLogPage,
+      page_size: state.aiLogPageSize,
+    });
+
+    if (state.aiLogSelectedFeature && state.aiLogSelectedFeature !== 'all') {
+      params.append('feature', state.aiLogSelectedFeature);
+    }
+    if (state.aiLogSelectedStatus && state.aiLogSelectedStatus !== 'all') {
+      params.append('status', state.aiLogSelectedStatus);
+    }
+    if (state.aiLogSelectedCache && state.aiLogSelectedCache !== 'all') {
+      params.append('from_cache', state.aiLogSelectedCache);
+    }
+    if (state.aiLogSearchTerm) {
+      params.append('search', state.aiLogSearchTerm);
+    }
+
+    const res = await apiRequest(`/admin/ai-grading/logs?${params.toString()}`);
+    state.aiLogs = res.items || [];
+    state.aiLogTotal = res.total || 0;
+    state.aiLogPage = res.page || 1;
+    state.aiLogTotalPages = res.total_pages || 1;
+
+    // Reset selection khi đổi trang
+    state.selectedLogIds.clear();
+    const checkAll = document.getElementById('check-all-ai-logs');
+    if (checkAll) checkAll.checked = false;
+    updateBulkDeleteUI();
+
+    renderAiGradingTable();
+    updateAiGradingPaginationUI();
+  } catch (err) {
+    tbody.innerHTML = `
+      <tr>
+        <td colspan="9" class="text-center py-4 text-danger">
+          <i class="fa-solid fa-triangle-exclamation"></i> Lỗi tải danh sách log: ${escapeHtml(err.message)}
+        </td>
+      </tr>
+    `;
+  }
+}
+
+function renderAiGradingTable() {
+  const tbody = document.getElementById('ai-logs-table-body');
+  if (!tbody) return;
+
+  if (state.aiLogs.length === 0) {
+    tbody.innerHTML = `
+      <tr>
+        <td colspan="9" class="text-center py-5" style="color: var(--text-muted);">
+          <i class="fa-regular fa-folder-open fa-2x mb-2" style="display:block; opacity: 0.5;"></i>
+          Không tìm thấy lượt chấm điểm nào khớp với bộ lọc hiện tại.
+        </td>
+      </tr>
+    `;
+    return;
+  }
+
+  tbody.innerHTML = state.aiLogs.map(item => {
+    // 1. Phân loại feature badge
+    let featureBadge = '';
+    if (item.feature === 'writing_grading') {
+      featureBadge = '<span class="badge-feature writing"><i class="fa-solid fa-pen-nib"></i> Writing</span>';
+    } else if (item.feature === 'reading_explain') {
+      featureBadge = '<span class="badge-feature reading"><i class="fa-solid fa-book-open"></i> Reading</span>';
+    } else if (item.feature === 'listening_explain') {
+      featureBadge = '<span class="badge-feature listening"><i class="fa-solid fa-headphones"></i> Listening</span>';
+    } else if (item.feature === 'vocab_sentence') {
+      featureBadge = '<span class="badge-feature vocab"><i class="fa-solid fa-brain"></i> Từ Vựng</span>';
+    } else {
+      featureBadge = `<span class="badge-feature">${escapeHtml(item.feature)}</span>`;
+    }
+
+    // 2. Định dạng ngày giờ
+    const d = new Date(item.created_at);
+    const dateStr = d.toLocaleDateString('vi-VN', { day: '2-digit', month: '2-digit', year: 'numeric' });
+    const timeStr = d.toLocaleTimeString('vi-VN', { hour: '2-digit', minute: '2-digit' });
+
+    // 3. Hiển thị đối tượng (Tiêu đề bài hoặc từ vựng)
+    const subject = item.lesson_title || item.vocab_word || item.lesson_id || '(Không rõ)';
+    const subText = item.vocab_level ? `Cấp độ ${item.vocab_level}` : (item.lesson_id ? `Mã: ${item.lesson_id}` : '');
+
+    // 4. Kết quả (Band / Điểm / Đúng-Sai)
+    let resultHtml = '';
+    if (item.feature === 'writing_grading') {
+      resultHtml = `<strong style="color: #2563eb; font-size: 13.5px;">Band ${item.band_score || '--'}</strong>`;
+    } else if (item.feature === 'vocab_sentence') {
+      resultHtml = `<strong style="color: #7c3aed;">${item.score_numeric !== null ? item.score_numeric : '--'}/100</strong>`;
+    } else {
+      resultHtml = item.is_correct 
+        ? '<span class="badge-ai-status success"><i class="fa-solid fa-check"></i> Đúng</span>'
+        : '<span class="badge-ai-status fallback"><i class="fa-solid fa-xmark"></i> Chưa đúng</span>';
+    }
+
+    // 5. Badge Trạng thái & Model
+    let statusBadge = '';
+    if (item.status === 'success') {
+      statusBadge = '<span class="badge-ai-status success"><i class="fa-solid fa-circle-check"></i> AI Thành công</span>';
+    } else if (item.status === 'fallback') {
+      statusBadge = '<span class="badge-ai-status fallback"><i class="fa-solid fa-shield-halved"></i> Fallback</span>';
+    } else {
+      statusBadge = '<span class="badge-ai-status error"><i class="fa-solid fa-circle-xmark"></i> Lỗi</span>';
+    }
+    const cacheBadge = item.from_cache ? '<span class="badge-cache" title="Lấy từ Cache"><i class="fa-solid fa-bolt"></i> Cache</span>' : '';
+
+    return `
+      <tr class="${state.selectedLogIds.has(item.id) ? 'selected-row' : ''}">
+        <td class="text-center">
+          <input type="checkbox" class="ai-log-row-check" data-id="${item.id}" ${state.selectedLogIds.has(item.id) ? 'checked' : ''} />
+        </td>
+        <td style="font-size: 12px; color: #475569;">
+          <div><strong>${timeStr}</strong></div>
+          <div style="font-size: 11px; color: #94a3b8;">${dateStr}</div>
+        </td>
+        <td>
+          <div style="font-weight: 600; color: #1e293b;">${escapeHtml(item.username || 'Khách')}</div>
+        </td>
+        <td>${featureBadge}</td>
+        <td>
+          <div style="font-weight: 600; color: #0f172a; max-width: 240px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;" title="${escapeHtml(subject)}">
+            ${escapeHtml(subject)}
+          </div>
+          ${subText ? `<div style="font-size: 11px; color: #64748b;">${escapeHtml(subText)}</div>` : ''}
+        </td>
+        <td class="text-center">${resultHtml}</td>
+        <td>
+          <div style="font-size: 12px; font-weight: 500; color: #334155;">${escapeHtml(item.model_name || 'qwen2.5:7b')}</div>
+          <div style="margin-top: 3px;">${statusBadge}${cacheBadge}</div>
+        </td>
+        <td class="text-center" style="font-size: 12px; font-weight: 600; color: ${item.latency_ms > 10000 ? '#ea580c' : '#475569'};">
+          ${item.from_cache ? '<span style="color:#059669;">~0 ms</span>' : `${item.latency_ms.toLocaleString()} ms`}
+        </td>
+        <td class="text-center">
+          <div style="display: inline-flex; gap: 6px;">
+            <button class="btn btn-outline btn-sm" onclick="openAiLogDetail('${item.id}')" title="Xem chi tiết kết quả AI">
+              <i class="fa-solid fa-eye"></i>
+            </button>
+            <button class="btn btn-outline btn-sm text-danger" onclick="handleDeleteAiLog('${item.id}', false)" title="Xóa bản ghi này">
+              <i class="fa-solid fa-trash-can"></i>
+            </button>
+          </div>
+        </td>
+      </tr>
+    `;
+  }).join('');
+
+  // Gắn sự kiện checkbox từng hàng
+  document.querySelectorAll('.ai-log-row-check').forEach(cb => {
+    cb.addEventListener('change', (e) => {
+      const id = e.target.getAttribute('data-id');
+      if (e.target.checked) {
+        state.selectedLogIds.add(id);
+      } else {
+        state.selectedLogIds.delete(id);
+      }
+      updateBulkDeleteUI();
+    });
+  });
+}
+
+function updateBulkDeleteUI() {
+  const count = state.selectedLogIds.size;
+  const btn = document.getElementById('btn-bulk-delete-ai-logs');
+  const countSpan = document.getElementById('bulk-selected-count');
+  if (btn && countSpan) {
+    if (count > 0) {
+      countSpan.textContent = count;
+      btn.style.display = 'inline-flex';
+    } else {
+      btn.style.display = 'none';
+    }
+  }
+}
+
+function updateAiGradingPaginationUI() {
+  const bar = document.getElementById('ai-logs-pagination');
+  const info = document.getElementById('ai-logs-pagination-info');
+  const pageNum = document.getElementById('ai-logs-current-page-num');
+  const prevBtn = document.getElementById('btn-ai-logs-prev');
+  const nextBtn = document.getElementById('btn-ai-logs-next');
+
+  if (!bar || !info) return;
+
+  if (state.aiLogTotal === 0) {
+    bar.style.display = 'none';
+    return;
+  }
+
+  bar.style.display = 'flex';
+  info.textContent = `Hiển thị trang ${state.aiLogPage} / ${state.aiLogTotalPages} (Tổng cộng ${state.aiLogTotal.toLocaleString()} lượt chấm)`;
+  pageNum.textContent = state.aiLogPage;
+
+  if (prevBtn) prevBtn.disabled = state.aiLogPage <= 1;
+  if (nextBtn) nextBtn.disabled = state.aiLogPage >= state.aiLogTotalPages;
+}
+
+// ─────────────────────────────────────────────────────────────
+// MODAL CHI TIẾT KẾT QUẢ AI
+// ─────────────────────────────────────────────────────────────
+
+async function openAiLogDetail(logId) {
+  state.currentViewingLogId = logId;
+  const modal = document.getElementById('ai-log-detail-modal');
+  const modalBody = document.getElementById('ai-log-modal-body');
+  if (!modal || !modalBody) return;
+
+  modal.classList.add('active');
+  modalBody.innerHTML = `
+    <div class="text-center py-5" style="color: var(--text-muted);">
+      <i class="fa-solid fa-spinner fa-spin fa-2x mb-2" style="display:block;"></i>
+      Đang tải chi tiết lượt chấm...
+    </div>
+  `;
+
+  try {
+    const data = await apiRequest(`/admin/ai-grading/logs/${logId}`);
+    renderAiLogDetailContent(data);
+  } catch (err) {
+    modalBody.innerHTML = `
+      <div class="text-center py-4 text-danger">
+        <i class="fa-solid fa-triangle-exclamation fa-2x mb-2"></i>
+        <p>Lỗi tải chi tiết: ${escapeHtml(err.message)}</p>
+      </div>
+    `;
+  }
+}
+
+function renderAiLogDetailContent(item) {
+  const modalBody = document.getElementById('ai-log-modal-body');
+  if (!modalBody) return;
+
+  const resJson = item.result_json || {};
+  const d = new Date(item.created_at);
+  const timeFormatted = d.toLocaleString('vi-VN');
+
+  // Metadata Box
+  const metaHtml = `
+    <div class="ai-detail-meta-grid">
+      <div class="ai-meta-item">
+        <span class="ai-meta-title">Học viên</span>
+        <span class="ai-meta-value">${escapeHtml(item.username || 'Khách')}</span>
+      </div>
+      <div class="ai-meta-item">
+        <span class="ai-meta-title">Thời gian thực hiện</span>
+        <span class="ai-meta-value">${timeFormatted}</span>
+      </div>
+      <div class="ai-meta-item">
+        <span class="ai-meta-title">Mô hình AI</span>
+        <span class="ai-meta-value">${escapeHtml(item.model_name || 'qwen2.5:7b')}</span>
+      </div>
+      <div class="ai-meta-item">
+        <span class="ai-meta-title">Thời gian phản hồi</span>
+        <span class="ai-meta-value">${item.from_cache ? '0 ms (Cache hit)' : `${item.latency_ms.toLocaleString()} ms`}</span>
+      </div>
+      <div class="ai-meta-item">
+        <span class="ai-meta-title">Trạng thái</span>
+        <span class="ai-meta-value">${item.status === 'success' ? '✅ Thành công' : (item.status === 'fallback' ? '⚠️ Fallback' : '❌ Lỗi')}</span>
+      </div>
+      <div class="ai-meta-item">
+        <span class="ai-meta-title">Tokens sử dụng</span>
+        <span class="ai-meta-value">In: ${item.prompt_tokens || '--'} · Out: ${item.completion_tokens || '--'}</span>
+      </div>
+    </div>
+  `;
+
+  // Input Box (Bài viết hoặc Câu đặt)
+  let inputTitle = 'Dữ liệu học viên nộp vào';
+  if (item.feature === 'writing_grading') {
+    inputTitle = `Bài viết IELTS Writing (${item.input_word_count || 0} từ)`;
+  } else if (item.feature === 'vocab_sentence') {
+    inputTitle = `Câu luyện tập với từ "${escapeHtml(item.vocab_word || '')}"`;
+  } else {
+    inputTitle = `Lựa chọn của học viên: "${escapeHtml(item.input_text || '')}"`;
+  }
+
+  const inputHtml = `
+    <div class="ai-detail-section">
+      <div class="ai-detail-section-title">
+        <i class="fa-solid fa-file-lines text-primary"></i> ${inputTitle}
+      </div>
+      <div class="ai-input-card">${escapeHtml(item.input_text || '(Không có nội dung)')}</div>
+    </div>
+  `;
+
+  // Output Breakdown Section
+  let outputSectionHtml = '';
+  if (item.feature === 'writing_grading') {
+    outputSectionHtml = renderWritingDetailHtml(item, resJson);
+  } else if (item.feature === 'vocab_sentence') {
+    outputSectionHtml = renderVocabSentenceDetailHtml(item, resJson);
+  } else {
+    outputSectionHtml = renderExplainDetailHtml(item, resJson);
+  }
+
+  // Raw JSON Collapsible
+  const jsonHtml = `
+    <details class="ai-json-collapsible">
+      <summary><i class="fa-solid fa-code"></i> Xem toàn bộ dữ liệu JSON phản hồi</summary>
+      <pre class="ai-json-pre">${escapeHtml(JSON.stringify(resJson, null, 2))}</pre>
+    </details>
+  `;
+
+  modalBody.innerHTML = metaHtml + inputHtml + outputSectionHtml + jsonHtml;
+}
+
+function renderWritingDetailHtml(item, resJson) {
+  const fb = resJson || {};
+  const criteriaList = [
+    { name: 'Task Achievement / Response', band: fb.task_response_band, comment: fb.task_response_comment },
+    { name: 'Coherence & Cohesion', band: fb.coherence_band, comment: fb.coherence_comment },
+    { name: 'Lexical Resource', band: fb.lexical_band, comment: fb.lexical_comment },
+    { name: 'Grammatical Range & Accuracy', band: fb.grammar_band, comment: fb.grammar_comment },
+  ];
+
+  const criteriaCardsHtml = criteriaList.map(c => `
+    <div class="ai-criteria-card">
+      <div class="ai-criteria-header">
+        <span class="ai-criteria-name">${c.name}</span>
+        <span class="ai-band-badge">Band ${c.band !== undefined ? c.band : '--'}</span>
+      </div>
+      <div class="ai-criteria-comment">${escapeHtml(c.comment || 'Chưa có nhận xét.')}</div>
+    </div>
+  `).join('');
+
+  // Errors list
+  const errors = fb.errors || [];
+  let errorsHtml = '';
+  if (errors.length > 0) {
+    errorsHtml = `
+      <div class="ai-detail-section" style="margin-top: 16px;">
+        <div class="ai-detail-section-title">
+          <i class="fa-solid fa-triangle-exclamation text-danger"></i> Chi tiết lỗi ngữ pháp & từ vựng (${errors.length} lỗi đã kiểm tra chống Hallucination)
+        </div>
+        <div class="ai-error-list">
+          ${errors.map(e => `
+            <div class="ai-error-item">
+              <div class="ai-error-quote">❌ Trích nguyên văn: "${escapeHtml(e.quote || '')}"</div>
+              <div class="ai-error-fix">✅ Sửa thành: "${escapeHtml(e.fix || '')}"</div>
+              ${e.explain_vi ? `<div class="ai-error-explain">💡 Giải thích: ${escapeHtml(e.explain_vi)}</div>` : ''}
+            </div>
+          `).join('')}
+        </div>
+      </div>
+    `;
+  }
+
+  // Strengths & Improvements
+  const strengths = fb.strengths || [];
+  const improvements = fb.improvements || [];
+  let feedbackListsHtml = '';
+  if (strengths.length > 0 || improvements.length > 0) {
+    feedbackListsHtml = `
+      <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); gap: 14px; margin-top: 16px;">
+        <div style="background: #f0fdf4; border: 1px solid #bbf7d0; border-radius: 8px; padding: 12px 14px;">
+          <strong style="color: #16a34a; font-size: 13px; display: block; margin-bottom: 6px;">
+            <i class="fa-solid fa-thumbs-up"></i> Điểm mạnh nổi bật
+          </strong>
+          <ul style="margin: 0; padding-left: 18px; font-size: 12.5px; color: #166534; line-height: 1.5;">
+            ${strengths.map(s => `<li>${escapeHtml(s)}</li>`).join('')}
+          </ul>
+        </div>
+        <div style="background: #fffbeb; border: 1px solid #fef3c7; border-radius: 8px; padding: 12px 14px;">
+          <strong style="color: #d97706; font-size: 13px; display: block; margin-bottom: 6px;">
+            <i class="fa-solid fa-lightbulb"></i> Hướng cải thiện nâng Band
+          </strong>
+          <ul style="margin: 0; padding-left: 18px; font-size: 12.5px; color: #92400e; line-height: 1.5;">
+            ${improvements.map(i => `<li>${escapeHtml(i)}</li>`).join('')}
+          </ul>
+        </div>
+      </div>
+    `;
+  }
+
+  // Improved Paragraph Band 8.0+
+  let improvedParagraphHtml = '';
+  if (fb.improved_paragraph) {
+    improvedParagraphHtml = `
+      <div class="ai-detail-section" style="margin-top: 16px;">
+        <div class="ai-detail-section-title">
+          <i class="fa-solid fa-wand-magic-sparkles" style="color: #8b5cf6;"></i> Đoạn văn nâng cấp gợi ý (Mức Band 8.0+)
+        </div>
+        <div style="background: #f5f3ff; border: 1px solid #ddd6fe; border-radius: 8px; padding: 12px 14px; font-size: 13px; color: #4c1d95; line-height: 1.6;">
+          ${escapeHtml(fb.improved_paragraph)}
+        </div>
+      </div>
+    `;
+  }
+
+  return `
+    <div class="ai-detail-section">
+      <div class="ai-detail-section-title" style="justify-content: space-between;">
+        <span><i class="fa-solid fa-award text-primary"></i> Đánh giá 4 Tiêu Chí IELTS Writing</span>
+        <span class="ai-band-badge" style="font-size: 14px; padding: 4px 12px;">Band Tổng: ${item.band_score || '--'}</span>
+      </div>
+      <div class="ai-criteria-grid">${criteriaCardsHtml}</div>
+      ${feedbackListsHtml}
+      ${errorsHtml}
+      ${improvedParagraphHtml}
+    </div>
+  `;
+}
+
+function renderVocabSentenceDetailHtml(item, resJson) {
+  const corrected = resJson.corrected_sentence || item.input_text;
+  const feedbackVi = resJson.feedback_vi || '';
+  const score = resJson.score !== undefined ? resJson.score : item.score_numeric;
+  const band = resJson.estimated_band || item.band_score || '--';
+
+  const collocations = resJson.key_collocations_used || [];
+  let collsHtml = '';
+  if (collocations.length > 0) {
+    collsHtml = `
+      <div style="margin-top: 12px;">
+        <strong style="font-size: 12px; color: #64748b; text-transform: uppercase;">Collocations gợi ý:</strong>
+        <div style="display: flex; gap: 6px; flex-wrap: wrap; margin-top: 4px;">
+          ${collocations.map(c => `<span style="background: #f1f5f9; padding: 3px 8px; border-radius: 6px; font-size: 12px; font-weight: 600; color: #334155;">${escapeHtml(c)}</span>`).join('')}
+        </div>
+      </div>
+    `;
+  }
+
+  return `
+    <div class="ai-detail-section">
+      <div class="ai-detail-section-title" style="justify-content: space-between;">
+        <span><i class="fa-solid fa-chart-simple text-primary"></i> Kết quả Đánh Giá Đặt Câu</span>
+        <span class="ai-band-badge" style="font-size: 13px;">${score}/100 · Band ${band}</span>
+      </div>
+
+      <div style="background: #f8fafc; border: 1px solid #e2e8f0; border-radius: 8px; padding: 12px 14px; margin-bottom: 14px;">
+        <div style="font-size: 13px; color: #16a34a; font-weight: 600;">
+          <i class="fa-solid fa-check"></i> Câu đã sửa hoàn thiện:
+        </div>
+        <div style="font-size: 13.5px; color: #1e293b; margin-top: 4px; font-weight: 500;">
+          "${escapeHtml(corrected)}"
+        </div>
+        ${feedbackVi ? `<div style="font-size: 12.5px; color: #475569; margin-top: 8px; line-height: 1.5; border-top: 1px dashed #e2e8f0; padding-top: 6px;">💡 <strong>Nhận xét:</strong> ${escapeHtml(feedbackVi)}</div>` : ''}
+        ${collsHtml}
+      </div>
+
+      <div class="ai-detail-section-title">
+        <i class="fa-solid fa-stairs" style="color: #7c3aed;"></i> Thang nâng cấp câu 3 bậc (Word Upgrade Ladder)
+      </div>
+      <div class="ai-upgrade-ladder">
+        <div class="ai-ladder-step basic">
+          <div class="ladder-step-tag basic"><i class="fa-solid fa-seedling"></i> Bậc Cơ Bản (Band 5.0 - 5.5)</div>
+          <div class="ladder-step-text">${escapeHtml(resJson.upgraded_basic || item.input_text || '')}</div>
+        </div>
+        <div class="ai-ladder-step intermediate">
+          <div class="ladder-step-tag intermediate"><i class="fa-solid fa-arrow-trend-up"></i> Bậc Trung Cấp (Band 6.5)</div>
+          <div class="ladder-step-text">${escapeHtml(resJson.upgraded_intermediate || item.input_text || '')}</div>
+        </div>
+        <div class="ai-ladder-step advanced">
+          <div class="ladder-step-tag advanced"><i class="fa-solid fa-crown"></i> Bậc Nâng Cao / Học Thuật (Band 8.0+)</div>
+          <div class="ladder-step-text">${escapeHtml(resJson.upgraded_advanced || item.input_text || '')}</div>
+        </div>
+      </div>
+    </div>
+  `;
+}
+
+function renderExplainDetailHtml(item, resJson) {
+  const isCorrect = item.is_correct || resJson.is_correct;
+  const whyCorrect = resJson.why_correct || '';
+  const whyTrap = resJson.why_trap || '';
+  const strategy = resJson.strategy_tips || '';
+  const vocabList = resJson.key_vocabulary || [];
+
+  return `
+    <div class="ai-detail-section">
+      <div class="ai-detail-section-title" style="justify-content: space-between;">
+        <span><i class="fa-solid fa-comments text-primary"></i> Giải Thích Chi Tiết &amp; Phân Tích Bẫy</span>
+        <span class="badge-ai-status ${isCorrect ? 'success' : 'fallback'}" style="font-size: 13px;">
+          ${isCorrect ? '✅ Học viên chọn ĐÚNG' : '⚠️ Học viên chọn CHƯA ĐÚNG'}
+        </span>
+      </div>
+
+      ${whyCorrect ? `
+        <div style="background: #f0fdf4; border: 1px solid #bbf7d0; border-radius: 8px; padding: 12px 14px; margin-bottom: 12px;">
+          <strong style="color: #166534; font-size: 13px;"><i class="fa-solid fa-circle-check"></i> Dẫn chứng câu gốc vì sao đúng:</strong>
+          <div style="font-size: 12.5px; color: #14532d; margin-top: 4px; line-height: 1.5;">${escapeHtml(whyCorrect)}</div>
+        </div>
+      ` : ''}
+
+      ${whyTrap ? `
+        <div style="background: #fffbeb; border: 1px solid #fef3c7; border-radius: 8px; padding: 12px 14px; margin-bottom: 12px;">
+          <strong style="color: #b45309; font-size: 13px;"><i class="fa-solid fa-triangle-exclamation"></i> Phân tích bẫy phương án:</strong>
+          <div style="font-size: 12.5px; color: #78350f; margin-top: 4px; line-height: 1.5;">${escapeHtml(whyTrap)}</div>
+        </div>
+      ` : ''}
+
+      ${strategy ? `
+        <div style="background: #f8fafc; border: 1px solid #e2e8f0; border-radius: 8px; padding: 12px 14px; margin-bottom: 12px;">
+          <strong style="color: #334155; font-size: 13px;"><i class="fa-solid fa-lightbulb" style="color: #f59e0b;"></i> Mẹo &amp; Chiến thuật làm bài:</strong>
+          <div style="font-size: 12.5px; color: #475569; margin-top: 4px; line-height: 1.5;">${escapeHtml(strategy)}</div>
+        </div>
+      ` : ''}
+
+      ${vocabList.length > 0 ? `
+        <div style="margin-top: 14px;">
+          <div class="ai-detail-section-title"><i class="fa-solid fa-book-bookmark text-primary"></i> Từ vựng / Paraphrase mở rộng</div>
+          <div style="display: flex; flex-direction: column; gap: 6px;">
+            ${vocabList.map(v => `
+              <div style="background: white; border: 1px solid #e2e8f0; border-radius: 6px; padding: 8px 12px; font-size: 12.5px;">
+                <strong style="color: #0f172a;">${escapeHtml(v.word || '')}</strong>: <span style="color: #475569;">${escapeHtml(v.meaning || '')}</span>
+                ${v.paraphrase_with ? `<span style="color: #059669; margin-left: 8px;">(Paraphrase: <em>${escapeHtml(v.paraphrase_with)}</em>)</span>` : ''}
+              </div>
+            `).join('')}
+          </div>
+        </div>
+      ` : ''}
+    </div>
+  `;
+}
+
+// ─────────────────────────────────────────────────────────────
+// XÓA BẢN GHI LOG AI
+// ─────────────────────────────────────────────────────────────
+
+async function handleDeleteAiLog(logId, fromModal = false) {
+  if (!confirm('Bạn có chắc chắn muốn xóa bản ghi log chấm điểm này không?')) {
+    return;
+  }
+
+  try {
+    await apiRequest(`/admin/ai-grading/logs/${logId}`, { method: 'DELETE' });
+    showToast('Đã xóa bản ghi log AI thành công!', 'success');
+    if (fromModal) {
+      document.getElementById('ai-log-detail-modal').classList.remove('active');
+    }
+    loadAiGradingData();
+  } catch (err) {
+    showToast(`Xóa thất bại: ${err.message}`, 'error');
+  }
+}
+
+async function handleBulkDeleteAiLogs() {
+  const ids = Array.from(state.selectedLogIds);
+  if (ids.length === 0) return;
+
+  if (!confirm(`Bạn có chắc muốn xóa vĩnh viễn ${ids.length} bản ghi log AI đã chọn?`)) {
+    return;
+  }
+
+  try {
+    const res = await apiRequest('/admin/ai-grading/logs/bulk-delete', {
+      method: 'POST',
+      body: JSON.stringify({ ids }),
+    });
+    showToast(res.message || `Đã xóa ${ids.length} bản ghi!`, 'success');
+    state.selectedLogIds.clear();
+    loadAiGradingData();
+  } catch (err) {
+    showToast(`Lỗi xóa hàng loạt: ${err.message}`, 'error');
+  }
+}
+
+function handleExportAiLogsCsv() {
+  const params = new URLSearchParams();
+  if (state.aiLogSelectedFeature && state.aiLogSelectedFeature !== 'all') {
+    params.append('feature', state.aiLogSelectedFeature);
+  }
+  if (state.aiLogSelectedStatus && state.aiLogSelectedStatus !== 'all') {
+    params.append('status', state.aiLogSelectedStatus);
+  }
+  if (state.aiLogSearchTerm) {
+    params.append('search', state.aiLogSearchTerm);
+  }
+
+  const token = state.token;
+  const url = `${API_BASE}/admin/ai-grading/export-csv?${params.toString()}`;
+
+  // Tải file trực tiếp với fetch để đính kèm Authorization header
+  fetch(url, {
+    headers: {
+      'Authorization': `Bearer ${token}`,
+    },
+  })
+    .then(res => {
+      if (!res.ok) throw new Error(`HTTP ${res.status}`);
+      return res.blob();
+    })
+    .then(blob => {
+      const a = document.createElement('a');
+      const objectUrl = window.URL.createObjectURL(blob);
+      a.href = objectUrl;
+      const d = new Date().toISOString().slice(0, 10);
+      a.download = `qwen_grading_history_${d}.csv`;
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      window.URL.revokeObjectURL(objectUrl);
+      showToast('Đã xuất file CSV thành công!', 'success');
+    })
+    .catch(err => {
+      showToast(`Lỗi xuất CSV: ${err.message}`, 'error');
+    });
+}
+
+window.openAiLogDetail = openAiLogDetail;
+window.handleDeleteAiLog = handleDeleteAiLog;
+

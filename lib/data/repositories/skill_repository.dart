@@ -532,6 +532,24 @@ class SkillRepository {
       topic: 'Technology & Demographics',
       bandScoreTarget: '6.5',
       passScoreRequired: 6,
+      chartData: const ChartDataModel(
+        type: 'bar',
+        title: 'Internet Access in Households (2015 - 2025)',
+        unit: '%',
+        categories: ['2015', '2018', '2020', '2025'],
+        series: [
+          ChartSeriesModel(
+            name: 'Đô thị (Urban)',
+            hexColor: '#1E3A8A',
+            values: [65.0, 75.0, 82.0, 92.0],
+          ),
+          ChartSeriesModel(
+            name: 'Nông thôn (Rural)',
+            hexColor: '#D97706',
+            values: [30.0, 42.0, 55.0, 78.0],
+          ),
+        ],
+      ),
       prompt:
           'The chart illustrates the percentage of households with internet access across urban and rural areas from 2015 to 2025. Summarise the information by selecting and reporting the main features, and make comparisons where relevant. Write at least 120 words.',
       minWordCount: 120,
@@ -568,6 +586,29 @@ class SkillRepository {
       topic: 'Energy & Environment',
       bandScoreTarget: '7.0',
       passScoreRequired: 7,
+      chartData: const ChartDataModel(
+        type: 'line',
+        title: 'Renewable Energy Consumption Across Three Continents',
+        unit: 'TWh',
+        categories: ['2010', '2014', '2018', '2024'],
+        series: [
+          ChartSeriesModel(
+            name: 'Châu Âu (Europe)',
+            hexColor: '#2563EB',
+            values: [450.0, 480.0, 520.0, 590.0],
+          ),
+          ChartSeriesModel(
+            name: 'Bắc Mỹ (North America)',
+            hexColor: '#059669',
+            values: [380.0, 410.0, 460.0, 500.0],
+          ),
+          ChartSeriesModel(
+            name: 'Châu Á (Asia)',
+            hexColor: '#DC2626',
+            values: [220.0, 360.0, 610.0, 950.0],
+          ),
+        ],
+      ),
       prompt:
           'The line graph shows changes in the consumption of renewable energy (in terawatt-hours) across Europe, North America, and Asia between 2010 and 2024. Summarise the main trends and make comparisons. Write at least 150 words.',
       minWordCount: 150,
@@ -598,6 +639,7 @@ class SkillRepository {
       id: 'w3',
       stageNumber: 3,
       difficultyLabel: 'Ải 3: Nâng cao - Task 2 Opinion Essay (Band 7.5)',
+
       taskType: 'Task 2',
       title: 'Remote Work & Its Socioeconomic Influence on Cities',
       topic: 'Society & Employment',

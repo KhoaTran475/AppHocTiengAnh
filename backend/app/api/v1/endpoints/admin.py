@@ -1,10 +1,12 @@
+import os
 from fastapi import APIRouter, Depends
 from sqlalchemy.orm import Session
 from sqlalchemy import func
 from app.db.session import get_db
+from app.core.config import settings
 from app.schemas.user import AdminKPISummary
 from app.core.deps import get_current_admin
-from app.core.supabase import get_supabase_admin
+from app.core.supabase import get_supabase_admin, upload_file_to_supabase
 from app.models.user import User
 
 router = APIRouter()
@@ -267,3 +269,197 @@ def admin_get_skill_template(
 ):
     """Cung cấp cấu trúc mẫu chuẩn kèm ví dụ để khách hàng/giáo viên tham khảo và điền đề thi."""
     return get_skill_template_data(skill_type)
+
+
+@router.post(
+    "/skills/upload-chart",
+    summary="Upload file ảnh biểu đồ Task 1 lên Supabase Storage (kèm Fallback)",
+)
+async def admin_upload_chart_image(
+    file: UploadFile = File(..., description="File ảnh biểu đồ (.png, .jpg, .jpeg, .webp, dung lượng <= 5MB)"),
+    current_admin: User = Depends(get_current_admin),
+):
+    """
+    Tải file ảnh biểu đồ lên Supabase Storage bucket 'ielts-assets' (chế độ Public).
+    Kiểm tra bảo mật & tối ưu dữ liệu:
+    - Quyền Admin bắt buộc (RBAC).
+    - Validate định dạng: Chỉ chấp nhận .png, .jpg, .jpeg, .webp.
+    - Validate dung lượng: <= 5MB.
+    - Tự động kích hoạt cơ chế Fallback nếu Supabase Storage gặp sự cố.
+    """
+    # 1. Validate định dạng file
+    allowed_extensions = {".png", ".jpg", ".jpeg", ".webp"}
+    filename = file.filename or "chart.png"
+    ext = os.path.splitext(filename)[1].lower()
+    if ext not in allowed_extensions:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=f"Định dạng file '{ext}' không hợp lệ. Chỉ chấp nhận các định dạng ảnh: {', '.join(allowed_extensions)}",
+        )
+
+    # 2. Đọc nội dung và validate kích thước file (tối đa 5MB)
+    contents = await file.read()
+    max_size = 5 * 1024 * 1024  # 5MB
+    if len(contents) > max_size:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=f"Dung lượng file vượt quá giới hạn cho phép (Tối đa 5MB. Dung lượng file hiện tại: {round(len(contents) / (1024 * 1024), 2)}MB).",
+        )
+
+    # 3. Tải lên Supabase Storage (kèm cơ chế Fallback an toàn)
+    content_type = file.content_type or "image/png"
+    result = upload_file_to_supabase(
+        file_bytes=contents,
+        original_filename=filename,
+        content_type=content_type,
+        bucket_name="ielts-assets",
+        subfolder="charts",
+    )
+
+    if not result.get("url"):
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Không thể lưu trữ file ảnh: {result.get('error', 'Lỗi không xác định')}",
+        )
+
+    return {
+        "success": True,
+        "message": "Tải lên ảnh biểu đồ thành công!",
+        "url": result["url"],
+        "source": result["source"],
+        "filename": result["filename"],
+    }
+
+
+# ─────────────────────────────────────────────────────────────
+# PHÂN HỆ QUẢN TRỊ CẤU HÌNH AI (OLLAMA QWEN) & HỌC TỪ VỰNG
+# ─────────────────────────────────────────────────────────────
+
+from app.schemas.vocab_learning import (
+    SystemVocabConfigResponse,
+    SystemVocabConfigUpdate,
+    OllamaModelTestRequest,
+    OllamaModelTestResponse,
+)
+from app.services.ollama_vocab_service import (
+    get_or_create_system_vocab_config,
+    update_system_vocab_config,
+    test_ollama_model_benchmark,
+    resolve_qwen_model,
+)
+
+
+@router.get(
+    "/vocab-config",
+    response_model=SystemVocabConfigResponse,
+    summary="Lấy cấu hình học từ vựng & AI Qwen cho Web Admin Portal",
+)
+@router.get(
+    "/ai-config",
+    response_model=SystemVocabConfigResponse,
+    summary="Lấy cấu hình AI & Học tập cho Web Admin Portal",
+)
+async def admin_get_vocab_config(
+    db: Session = Depends(get_db),
+):
+    """Admin Portal lấy toàn bộ cấu hình AI Model & các thông số Quiz."""
+    cfg = get_or_create_system_vocab_config(db)
+    online, resolved, available = await resolve_qwen_model(db=db)
+    return SystemVocabConfigResponse(
+        id=cfg.id,
+        active_model=cfg.active_model,
+        temperature=round(cfg.temperature / 10.0, 1),
+        default_gen_count=cfg.default_gen_count,
+        quiz_question_count=cfg.quiz_question_count,
+        pass_percentage=cfg.pass_percentage,
+        star_thresholds=cfg.star_thresholds or {"star1": 60, "star2": 80, "star3": 100},
+        auto_cache_enabled=bool(cfg.auto_cache_enabled),
+        updated_at=cfg.updated_at,
+        is_ollama_online=online,
+        available_models=available,
+        ollama_base_url=settings.OLLAMA_BASE_URL,
+    )
+
+
+@router.put(
+    "/vocab-config",
+    response_model=SystemVocabConfigResponse,
+    summary="Admin Portal cập nhật cấu hình học từ vựng & AI Qwen",
+)
+@router.put(
+    "/ai-config",
+    response_model=SystemVocabConfigResponse,
+    summary="Admin Portal cập nhật cấu hình AI & Học tập",
+)
+async def admin_update_vocab_config(
+    update_data: SystemVocabConfigUpdate,
+    db: Session = Depends(get_db),
+):
+    """Cập nhật cấu hình: Model Qwen, số câu Quiz, % vượt ải, số từ sinh."""
+    cfg = update_system_vocab_config(db=db, update_data=update_data)
+    online, resolved, available = await resolve_qwen_model(db=db)
+    return SystemVocabConfigResponse(
+        id=cfg.id,
+        active_model=cfg.active_model,
+        temperature=round(cfg.temperature / 10.0, 1),
+        default_gen_count=cfg.default_gen_count,
+        quiz_question_count=cfg.quiz_question_count,
+        pass_percentage=cfg.pass_percentage,
+        star_thresholds=cfg.star_thresholds or {"star1": 60, "star2": 80, "star3": 100},
+        auto_cache_enabled=bool(cfg.auto_cache_enabled),
+        updated_at=cfg.updated_at,
+        is_ollama_online=online,
+        available_models=available,
+        ollama_base_url=settings.OLLAMA_BASE_URL,
+    )
+
+
+@router.post(
+    "/vocab-config/test-model",
+    response_model=OllamaModelTestResponse,
+    summary="Admin Portal test benchmark model AI Qwen",
+)
+@router.post(
+    "/ai-config/test-model",
+    response_model=OllamaModelTestResponse,
+    summary="Admin Portal test benchmark model AI Qwen (Alias)",
+)
+async def admin_test_vocab_model(
+    req: OllamaModelTestRequest,
+):
+    """Admin kiểm tra phản hồi JSON và đo latency ms của model được chọn."""
+    success, latency_ms, msg, sample = await test_ollama_model_benchmark(
+        model_name=req.model_name,
+        test_prompt=req.test_prompt,
+    )
+    return OllamaModelTestResponse(
+        success=success,
+        model=req.model_name,
+        latency_ms=latency_ms,
+        message=msg,
+        sample_response=sample,
+    )
+
+
+@router.get(
+    "/tags",
+    summary="Lấy danh sách các model đã cài trên Ollama",
+)
+@router.get(
+    "/ollama/tags",
+    summary="Lấy danh sách các model đã cài trên Ollama (Alias)",
+)
+async def admin_get_ollama_tags(
+    db: Session = Depends(get_db),
+):
+    """Liệt kê toàn bộ model đã cài trên Ollama qua GET /api/tags."""
+    online, resolved, available = await resolve_qwen_model(db=db)
+    models = [{"name": m, "model": m} for m in available]
+    return {
+        "models": models,
+        "is_online": online,
+        "active_model": resolved,
+        "ollama_base_url": settings.OLLAMA_BASE_URL,
+    }
+
+

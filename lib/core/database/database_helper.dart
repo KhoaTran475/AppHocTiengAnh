@@ -33,6 +33,14 @@ class DatabaseHelper {
       onCreate: _createDB,
     );
 
+    // Tự động kiểm tra và nâng cấp cột email cho Users
+    try {
+      await db.execute('ALTER TABLE Users ADD COLUMN email TEXT;');
+    } catch (_) {}
+    try {
+      await db.execute('ALTER TABLE Users ADD COLUMN is_email_verified INTEGER DEFAULT 0;');
+    } catch (_) {}
+
     // Tự động đồng bộ hóa toàn bộ kho từ điển nếu phiên âm chưa được chuyển sang từ thông dụng
     try {
       final sample = await db.query(

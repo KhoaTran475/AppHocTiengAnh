@@ -12,20 +12,42 @@ import '../../auth/providers/auth_provider.dart';
 /// Modal Bottom Sheet hiển thị chi tiết từ vựng IELTS Band 7.0 - 8.5
 /// được nạp động từ SQLite (Object_Mappings) khi quét nhận diện vật thể bằng AI.
 class VocabularyDetailBottomSheet extends StatefulWidget {
-  final Recognition recognition;
+  final Recognition? recognition;
+  final ObjectMappingModel? initialMapping;
 
   const VocabularyDetailBottomSheet({
     super.key,
-    required this.recognition,
+    this.recognition,
+    this.initialMapping,
   });
 
-  /// Hàm tiện ích mở Bottom Sheet
+  /// Hàm tiện ích mở Bottom Sheet từ kết quả quét YOLO
   static Future<void> show(BuildContext context, Recognition recognition) {
     return showModalBottomSheet(
       context: context,
       isScrollControlled: true,
       backgroundColor: Colors.transparent,
       builder: (_) => VocabularyDetailBottomSheet(recognition: recognition),
+    );
+  }
+
+  /// Hàm tiện ích mở Bottom Sheet từ ObjectMappingModel (Deep Scan Ollama Phi-3)
+  static Future<void> showWithMapping(
+    BuildContext context,
+    ObjectMappingModel mapping,
+  ) {
+    return showModalBottomSheet(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: Colors.transparent,
+      builder: (_) => VocabularyDetailBottomSheet(
+        initialMapping: mapping,
+        recognition: Recognition(
+          mapping.commonWord.isNotEmpty ? mapping.commonWord : mapping.label,
+          0.96,
+          const Rect.fromLTWH(0.2, 0.2, 0.6, 0.6),
+        ),
+      ),
     );
   }
 
@@ -54,17 +76,25 @@ class _VocabularyDetailBottomSheetState
   }
 
   Future<void> _loadVocabularyData() async {
-    final label = widget.recognition.label;
-    ObjectMappingModel? mapping;
+    final label = widget.initialMapping?.label ??
+        widget.recognition?.label ??
+        '';
+    ObjectMappingModel? mapping = widget.initialMapping;
     bool saved = false;
 
-    try {
-      mapping = await ApiService.instance.getMappingByLabel(label);
-      saved = await ApiService.instance.checkWordSaved(label);
-    } catch (_) {}
+    if (mapping == null) {
+      try {
+        mapping = await ApiService.instance.getMappingByLabel(label);
+        saved = await ApiService.instance.checkWordSaved(label);
+      } catch (_) {}
 
-    // Fallback SQLite nếu chưa nạp được qua API
-    mapping ??= await DatabaseHelper.instance.getMappingByLabel(label);
+      // Fallback SQLite nếu chưa nạp được qua API
+      mapping ??= await DatabaseHelper.instance.getMappingByLabel(label);
+    } else {
+      try {
+        saved = await ApiService.instance.checkWordSaved(label);
+      } catch (_) {}
+    }
 
     if (!mounted) return;
     final currentUser = context.read<AuthProvider>().currentUser;
@@ -80,6 +110,7 @@ class _VocabularyDetailBottomSheetState
       });
     }
   }
+
 
   Future<void> _saveToNotebook() async {
     final currentUser = context.read<AuthProvider>().currentUser;
@@ -219,8 +250,11 @@ class _VocabularyDetailBottomSheetState
 
   /// Tiêu đề + Nhãn phát hiện + Band Score Badge
   Widget _buildHeader() {
-    final label = widget.recognition.label;
+    final label = widget.initialMapping?.commonWord.isNotEmpty == true
+        ? widget.initialMapping!.commonWord
+        : (widget.recognition?.label ?? _mapping?.commonWord ?? _mapping?.label ?? 'Object');
     final band = _mapping?.bandScore ?? '7.0';
+
 
     return Row(
       children: [
@@ -299,10 +333,14 @@ class _VocabularyDetailBottomSheetState
 
   /// Phần hiển thị Từ vựng học thuật + Nghĩa tiếng Việt + Phát âm
   Widget _buildMainWordSection() {
-    final academic = _mapping?.academicWord ?? widget.recognition.label;
-    final common = _mapping?.commonWord ?? widget.recognition.label;
+    final defaultLabel = widget.initialMapping?.commonWord ??
+        widget.recognition?.label ??
+        'Object';
+    final academic = _mapping?.academicWord ?? defaultLabel;
+    final common = _mapping?.commonWord ?? defaultLabel;
     final vietnamese = _mapping?.vietnameseMeaning ?? 'Đang cập nhật nghĩa';
     final ipa = _mapping?.ipa ?? '';
+
 
     return Container(
       width: double.infinity,
@@ -602,26 +640,32 @@ class _VocabularyDetailBottomSheetState
     );
   }
 
-  /// Thông tin độ tin cậy AI
+  /// Thông tin độ tin cậy AI & Mô hình
   Widget _buildConfidenceInfo() {
-    final conf = (widget.recognition.confidence * 100).toStringAsFixed(1);
+    final isOllama = widget.initialMapping != null;
+    final conf = ((widget.recognition?.confidence ?? 0.95) * 100).toStringAsFixed(0);
 
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
       decoration: BoxDecoration(
-        color: Colors.blue.withValues(alpha: 0.08),
+        color: (isOllama ? Colors.purple : Colors.blue).withValues(alpha: 0.08),
         borderRadius: BorderRadius.circular(10),
       ),
       child: Row(
         mainAxisAlignment: MainAxisAlignment.center,
         children: [
-          const Icon(Icons.psychology_rounded,
-              color: Colors.blueAccent, size: 18),
+          Icon(
+            isOllama ? Icons.auto_awesome_rounded : Icons.psychology_rounded,
+            color: isOllama ? Colors.purple : Colors.blueAccent,
+            size: 18,
+          ),
           const SizedBox(width: 8),
           Text(
-            'YOLOv8n Confidence: $conf%',
-            style: const TextStyle(
-              color: Colors.blueAccent,
+            isOllama
+                ? 'AI Engine: Ollama LLaVA-Phi3 (Deep Scan)'
+                : 'YOLOv8n Confidence: $conf%',
+            style: TextStyle(
+              color: isOllama ? Colors.purple : Colors.blueAccent,
               fontSize: 13,
               fontWeight: FontWeight.w600,
             ),
@@ -630,6 +674,7 @@ class _VocabularyDetailBottomSheetState
       ),
     );
   }
+
 
   /// Nút LƯU VÀO SỔ TAY THỰC TẾ
   Widget _buildSaveButton() {

@@ -155,7 +155,15 @@ def login_with_face(
             detail=message,
         )
 
-    # 4. Nhận diện thành công -> Cấp phát JWT Access Token
+    # 4. Kiểm tra quyền hạn: Tuyệt đối không cho phép tài khoản Admin đăng nhập bằng FaceID trên mobile
+    if matched_user.role == "admin":
+        logger.warning(f"Chặn FaceID login cho Admin '{matched_user.username}' trên mobile.")
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Tài khoản Quản trị viên không được phép đăng nhập trên thiết bị di động qua FaceID",
+        )
+
+    # 5. Nhận diện thành công -> Cấp phát JWT Access Token
     access_token = create_access_token(subject=matched_user.username, role=matched_user.role)
     logger.info(f"Đăng nhập FaceID thành công cho user '{matched_user.username}' (Score={score:.4f})")
 

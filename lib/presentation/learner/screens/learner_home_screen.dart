@@ -8,10 +8,12 @@ import '../../auth/providers/auth_provider.dart';
 import '../../auth/widgets/face_scan_dialog.dart';
 import 'camera_scan_screen.dart';
 import 'vocabulary_notebook_screen.dart';
+import 'vocabulary_learning_screen.dart';
 import 'reading_practice_screen.dart';
 import 'listening_practice_screen.dart';
 import 'speaking_practice_screen.dart';
 import 'writing_practice_screen.dart';
+import 'ai_grading_history_screen.dart';
 import '../widgets/saved_vocabulary_detail_bottom_sheet.dart';
 
 /// Khung giao diện chính (App Shell & Navigation) của Học viên (Learner).
@@ -63,7 +65,7 @@ class _LearnerHomeScreenState extends State<LearnerHomeScreen> {
           ),
         ],
       ),
-      floatingActionButton: _currentIndex != 1
+      floatingActionButton: _currentIndex == 0
           ? FloatingActionButton.extended(
               onPressed: () {
                 Navigator.push(
@@ -161,6 +163,16 @@ class _LearnerDashboardTabState extends State<_LearnerDashboardTab> {
         elevation: 0.5,
         actions: [
           IconButton(
+            tooltip: 'Lịch sử chấm AI',
+            icon: const Icon(Icons.history_edu_rounded, color: AppColors.primary),
+            onPressed: () {
+              Navigator.push(
+                context,
+                MaterialPageRoute(builder: (_) => const AiGradingHistoryScreen()),
+              );
+            },
+          ),
+          IconButton(
             tooltip: 'Làm mới',
             icon: const Icon(Icons.refresh_rounded, color: Colors.grey),
             onPressed: _loadStats,
@@ -199,6 +211,8 @@ class _LearnerDashboardTabState extends State<_LearnerDashboardTab> {
 
               // ── Banner "Scan to Learn" điểm nhấn AI ──
               _buildAiScanBanner(context),
+              const SizedBox(height: 16),
+              _buildVocabLearningQwenBanner(context),
               const SizedBox(height: 20),
 
               // ── Thống kê tiến độ học tập ──
@@ -310,6 +324,103 @@ class _LearnerDashboardTabState extends State<_LearnerDashboardTab> {
   }
 
   /// Hàng thống kê KPI học tập
+  /// Thẻ tính năng Học Từ Vựng Cơ Bản -> Nâng Cao tích hợp Ollama Qwen 2.5 Local
+  Widget _buildVocabLearningQwenBanner(BuildContext context) {
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.all(18),
+      decoration: BoxDecoration(
+        gradient: const LinearGradient(
+          colors: [Color(0xFF1E293B), Color(0xFF334155)],
+          begin: Alignment.topLeft,
+          end: Alignment.bottomRight,
+        ),
+        borderRadius: BorderRadius.circular(20),
+        boxShadow: [
+          BoxShadow(
+            color: AppColors.navy.withValues(alpha: 0.25),
+            blurRadius: 14,
+            offset: const Offset(0, 5),
+          ),
+        ],
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              Container(
+                padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+                decoration: BoxDecoration(
+                  color: const Color(0xFF10B981).withValues(alpha: 0.2),
+                  borderRadius: BorderRadius.circular(20),
+                ),
+                child: const Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Icon(Icons.auto_awesome_rounded, color: Color(0xFF34D399), size: 15),
+                    SizedBox(width: 5),
+                    Text(
+                      'OLLAMA QWEN 2.5 LOCAL',
+                      style: TextStyle(
+                        color: Color(0xFF34D399),
+                        fontSize: 11,
+                        fontWeight: FontWeight.bold,
+                        letterSpacing: 0.8,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              const Spacer(),
+              const Icon(Icons.workspace_premium_rounded, color: Colors.amberAccent, size: 26),
+            ],
+          ),
+          const SizedBox(height: 10),
+          const Text(
+            'Học Từ Vựng Cơ Bản → Nâng Cao (5 Cấp Độ)',
+            style: TextStyle(
+              color: Colors.white,
+              fontSize: 18,
+              fontWeight: FontWeight.bold,
+            ),
+          ),
+          const SizedBox(height: 5),
+          const Text(
+            'Lộ trình từ CEFR A2-B1 (Band 4.5) đến C2 (Band 8.5+): Thang nâng cấp từ 3 bậc, Sinh từ vựng theo chủ đề & Chấm chữa câu trực tiếp bằng AI Qwen 2.5.',
+            style: TextStyle(color: Colors.white70, fontSize: 12.5, height: 1.4),
+          ),
+          const SizedBox(height: 14),
+          ElevatedButton.icon(
+            onPressed: () {
+              Navigator.push(
+                context,
+                MaterialPageRoute(
+                  builder: (_) => const VocabularyLearningScreen(),
+                ),
+              ).then((_) => _loadStats());
+            },
+            icon: const Icon(Icons.school_rounded, color: AppColors.navy),
+            label: const Text(
+              'VÀO LỘ TRÌNH TỪ VỰNG AI',
+              style: TextStyle(
+                color: AppColors.navy,
+                fontWeight: FontWeight.bold,
+                fontSize: 13.5,
+              ),
+            ),
+            style: ElevatedButton.styleFrom(
+              backgroundColor: const Color(0xFF34D399),
+              elevation: 0,
+              padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 11),
+              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(13)),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
   Widget _buildStatisticsRow() {
     return Row(
       children: [
@@ -629,7 +740,7 @@ class _LearnerDashboardTabState extends State<_LearnerDashboardTab> {
 }
 
 /// Tab Thông tin cá nhân & Tài khoản (Profile)
-/// Tích hợp Quản lý Bảo mật Sinh trắc học FaceID (Đăng ký, Trạng thái, Hủy)
+/// Tích hợp Quản lý Bảo mật Sinh trắc học FaceID, Thống kê thành tích và Thiết lập tài khoản
 class _LearnerProfileTab extends StatefulWidget {
   const _LearnerProfileTab();
 
@@ -639,21 +750,60 @@ class _LearnerProfileTab extends StatefulWidget {
 
 class _LearnerProfileTabState extends State<_LearnerProfileTab> {
   bool _isActionLoading = false;
+  int _savedWordsCount = 0;
+  bool _isLoadingStats = true;
+
+  @override
+  void initState() {
+    super.initState();
+    _loadStats();
+  }
+
+  Future<void> _loadStats() async {
+    final user = context.read<AuthProvider>().currentUser;
+    if (user != null) {
+      try {
+        final words = await ApiService.instance.getNotebookItems();
+        if (mounted) {
+          setState(() {
+            _savedWordsCount = words.length;
+            _isLoadingStats = false;
+          });
+          return;
+        }
+      } catch (_) {}
+
+      if (user.id != null) {
+        final count = await DatabaseHelper.instance.getNotebookCountByUser(user.id!);
+        if (mounted) {
+          setState(() {
+            _savedWordsCount = count;
+            _isLoadingStats = false;
+          });
+        }
+      }
+    }
+  }
+
+  String _formatDate(String? raw) {
+    if (raw == null || raw.isEmpty) return 'Gần đây';
+    try {
+      final dt = DateTime.parse(raw);
+      return '${dt.day.toString().padLeft(2, '0')}/${dt.month.toString().padLeft(2, '0')}/${dt.year}';
+    } catch (_) {
+      return raw;
+    }
+  }
 
   /// Đăng ký FaceID cho tài khoản hiện tại:
-  /// 1. Lấy mã Nonce thử thách từ Backend (60s).
-  /// 2. Mở FaceScanDialog để quét khuôn mặt qua Camera trước.
-  /// 3. Gửi ảnh Base64 và Nonce lên Backend để trích xuất và lưu vector 128 số float.
   Future<void> _registerFaceId() async {
     setState(() => _isActionLoading = true);
 
     try {
-      // BƯỚC 1: Lấy mã Nonce thử thách
       final String nonce = await ApiService.instance.getFaceNonce();
 
       if (!mounted) return;
 
-      // BƯỚC 2: Mở hộp thoại quét khuôn mặt FaceID
       final scanResult = await FaceScanDialog.show(
         context,
         mode: FaceScanMode.register,
@@ -668,7 +818,6 @@ class _LearnerProfileTabState extends State<_LearnerProfileTab> {
 
       if (!mounted) return;
 
-      // BƯỚC 3: Gửi dữ liệu đăng ký khuôn mặt lên Backend
       final res = await ApiService.instance.registerFace(
         imageBase64: scanResult.imageBase64,
         nonce: nonce,
@@ -676,7 +825,6 @@ class _LearnerProfileTabState extends State<_LearnerProfileTab> {
 
       if (!mounted) return;
 
-      // Cập nhật State trong AuthProvider
       context.read<AuthProvider>().updateFaceAuthStatus(
         isEnabled: true,
         registeredAt: res['registered_at']?.toString(),
@@ -714,7 +862,6 @@ class _LearnerProfileTabState extends State<_LearnerProfileTab> {
   }
 
   /// Hủy liên kết FaceID của tài khoản hiện tại:
-  /// Hiển thị Hộp thoại xác nhận trước khi gọi Backend DELETE
   Future<void> _deleteFaceId() async {
     final bool? confirm = await showDialog<bool>(
       context: context,
@@ -792,115 +939,266 @@ class _LearnerProfileTabState extends State<_LearnerProfileTab> {
     }
   }
 
+  void _showAppInfoDialog() {
+    showDialog(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+        title: Row(
+          children: [
+            Container(
+              padding: const EdgeInsets.all(8),
+              decoration: BoxDecoration(
+                color: AppColors.primary.withValues(alpha: 0.1),
+                borderRadius: BorderRadius.circular(10),
+              ),
+              child: const Icon(Icons.info_outline_rounded, color: AppColors.primary),
+            ),
+            const SizedBox(width: 12),
+            const Text('Về ứng dụng', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 18)),
+          ],
+        ),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            const Text(
+              'IELTS Vision AI',
+              style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16, color: AppColors.navy),
+            ),
+            const SizedBox(height: 4),
+            Text(
+              'Phiên bản 1.0.0 (Bảo mật FaceID & Quản lý 4 Kỹ năng IELTS)',
+              style: TextStyle(color: Colors.grey[600], fontSize: 13),
+            ),
+            const SizedBox(height: 14),
+            const Text(
+              'Ứng dụng học tiếng Anh thông minh kết hợp Thị giác máy tính YOLOv8 và Trí tuệ nhân tạo sinh trắc học FaceID.',
+              style: TextStyle(fontSize: 13, height: 1.4),
+            ),
+          ],
+        ),
+        actions: [
+          ElevatedButton(
+            onPressed: () => Navigator.pop(ctx),
+            style: ElevatedButton.styleFrom(
+              backgroundColor: AppColors.primary,
+              foregroundColor: Colors.white,
+              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+            ),
+            child: const Text('ĐÓNG'),
+          ),
+        ],
+      ),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     final user = context.watch<AuthProvider>().currentUser;
     final bool isFaceEnabled = user?.isFaceAuthEnabled ?? false;
+    final String initialLetter = (user?.username.isNotEmpty ?? false)
+        ? user!.username[0].toUpperCase()
+        : 'U';
 
     return Scaffold(
-      backgroundColor: Colors.grey[50],
+      backgroundColor: const Color(0xFFF8FAFC),
       appBar: AppBar(
         title: const Text(
           'Hồ sơ Cá nhân',
-          style: TextStyle(fontWeight: FontWeight.bold, color: AppColors.navy),
+          style: TextStyle(fontWeight: FontWeight.w800, color: AppColors.navy, fontSize: 20),
         ),
+        centerTitle: true,
         backgroundColor: Colors.white,
-        elevation: 0.5,
+        elevation: 0,
+        bottom: PreferredSize(
+          preferredSize: const Size.fromHeight(1),
+          child: Container(color: Colors.grey[200], height: 1),
+        ),
       ),
       body: ListView(
-        padding: const EdgeInsets.all(20),
+        padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 20),
         children: [
-          // Avatar + Tên người dùng
-          Center(
+          // 1. HERO HEADER PROFILE CARD
+          Container(
+            padding: const EdgeInsets.symmetric(vertical: 24, horizontal: 20),
+            decoration: BoxDecoration(
+              color: Colors.white,
+              borderRadius: BorderRadius.circular(20),
+              border: Border.all(color: const Color(0xFFE2E8F0)),
+              boxShadow: [
+                BoxShadow(
+                  color: Colors.black.withValues(alpha: 0.03),
+                  blurRadius: 12,
+                  offset: const Offset(0, 4),
+                ),
+              ],
+            ),
             child: Column(
               children: [
-                Container(
-                  padding: const EdgeInsets.all(20),
-                  decoration: BoxDecoration(
-                    color: AppColors.primary.withValues(alpha: 0.1),
-                    shape: BoxShape.circle,
-                  ),
-                  child: const Icon(
-                    Icons.person_rounded,
-                    size: 64,
-                    color: AppColors.primary,
-                  ),
+                // Avatar với Gradient và Badge
+                Stack(
+                  alignment: Alignment.bottomRight,
+                  children: [
+                    Container(
+                      width: 88,
+                      height: 88,
+                      decoration: BoxDecoration(
+                        shape: BoxShape.circle,
+                        gradient: const LinearGradient(
+                          colors: [Color(0xFFE11D48), Color(0xFF9F1239)],
+                          begin: Alignment.topLeft,
+                          end: Alignment.bottomRight,
+                        ),
+                        boxShadow: [
+                          BoxShadow(
+                            color: AppColors.primary.withValues(alpha: 0.3),
+                            blurRadius: 14,
+                            offset: const Offset(0, 6),
+                          ),
+                        ],
+                      ),
+                      child: Center(
+                        child: Text(
+                          initialLetter,
+                          style: const TextStyle(
+                            fontSize: 36,
+                            fontWeight: FontWeight.bold,
+                            color: Colors.white,
+                          ),
+                        ),
+                      ),
+                    ),
+                    Container(
+                      padding: const EdgeInsets.all(4),
+                      decoration: BoxDecoration(
+                        color: Colors.white,
+                        shape: BoxShape.circle,
+                        boxShadow: [
+                          BoxShadow(
+                            color: Colors.black.withValues(alpha: 0.1),
+                            blurRadius: 4,
+                          ),
+                        ],
+                      ),
+                      child: Container(
+                        padding: const EdgeInsets.all(3),
+                        decoration: const BoxDecoration(
+                          color: Color(0xFF10B981),
+                          shape: BoxShape.circle,
+                        ),
+                        child: const Icon(
+                          Icons.check,
+                          size: 12,
+                          color: Colors.white,
+                        ),
+                      ),
+                    ),
+                  ],
                 ),
                 const SizedBox(height: 14),
+                // Tên người dùng
                 Text(
                   user?.username ?? 'Học viên',
                   style: const TextStyle(
                     fontSize: 22,
-                    fontWeight: FontWeight.bold,
+                    fontWeight: FontWeight.w800,
                     color: AppColors.navy,
+                    letterSpacing: -0.3,
                   ),
                 ),
-                const SizedBox(height: 4),
+                const SizedBox(height: 8),
+                // Role Badge
                 Container(
-                  padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
+                  padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 5),
                   decoration: BoxDecoration(
-                    color: Colors.blue.withValues(alpha: 0.1),
+                    color: AppColors.primary.withValues(alpha: 0.08),
                     borderRadius: BorderRadius.circular(20),
+                    border: Border.all(color: AppColors.primary.withValues(alpha: 0.2)),
                   ),
-                  child: Text(
-                    'Vai trò: ${user?.role.toUpperCase() ?? "LEARNER"}',
-                    style: const TextStyle(
-                      color: Colors.blueAccent,
-                      fontWeight: FontWeight.bold,
-                      fontSize: 12,
-                    ),
+                  child: Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      const Icon(Icons.school_rounded, size: 14, color: AppColors.primary),
+                      const SizedBox(width: 6),
+                      Text(
+                        user?.role.toUpperCase() == 'ADMIN' ? 'QUẢN TRỊ VIÊN' : 'HỌC VIÊN IELTS',
+                        style: const TextStyle(
+                          color: AppColors.primary,
+                          fontWeight: FontWeight.w700,
+                          fontSize: 12,
+                          letterSpacing: 0.5,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+                const SizedBox(height: 10),
+                Text(
+                  'Thành viên từ: ${_formatDate(user?.createdAt)}',
+                  style: TextStyle(
+                    fontSize: 12,
+                    color: Colors.grey[500],
+                    fontWeight: FontWeight.w500,
                   ),
                 ),
               ],
             ),
           ),
-          const SizedBox(height: 28),
+          const SizedBox(height: 20),
 
-          // Thông tin tài khoản
-          Container(
-            decoration: BoxDecoration(
-              color: Colors.white,
-              borderRadius: BorderRadius.circular(16),
-              border: Border.all(color: Colors.grey[200]!),
-            ),
-            child: Column(
-              children: [
-                ListTile(
-                  leading: const Icon(Icons.badge_outlined, color: AppColors.navy),
-                  title: const Text('Mã học viên (User ID)'),
-                  trailing: Text(
-                    '#${user?.id ?? "N/A"}',
-                    style: const TextStyle(fontWeight: FontWeight.bold),
-                  ),
+          // 2. THỐNG KÊ THÀNH TÍCH (STATS GRID)
+          Row(
+            children: [
+              Expanded(
+                child: _buildStatItem(
+                  icon: Icons.menu_book_rounded,
+                  iconColor: const Color(0xFF3B82F6),
+                  iconBg: const Color(0xFFEFF6FF),
+                  title: 'Từ đã lưu',
+                  value: _isLoadingStats ? '...' : '$_savedWordsCount',
                 ),
-                const Divider(height: 1),
-                const ListTile(
-                  leading: Icon(Icons.school_outlined, color: AppColors.navy),
-                  title: Text('Mục tiêu học tập'),
-                  trailing: Text(
-                    'IELTS Band 7.5+',
-                    style: TextStyle(fontWeight: FontWeight.bold, color: AppColors.primary),
-                  ),
+              ),
+              const SizedBox(width: 12),
+              Expanded(
+                child: _buildStatItem(
+                  icon: Icons.track_changes_rounded,
+                  iconColor: AppColors.primary,
+                  iconBg: const Color(0xFFFFF1F2),
+                  title: 'Mục tiêu',
+                  value: '7.5+ Band',
                 ),
-              ],
-            ),
+              ),
+              const SizedBox(width: 12),
+              Expanded(
+                child: _buildStatItem(
+                  icon: Icons.military_tech_rounded,
+                  iconColor: const Color(0xFFF59E0B),
+                  iconBg: const Color(0xFFFEF3C7),
+                  title: 'Cấp độ',
+                  value: 'B2 - C1',
+                ),
+              ),
+            ],
           ),
           const SizedBox(height: 24),
 
-          // --- KHỐI BẢO MẬT SINH TRẮC HỌC FACEID ---
+          // 3. KHỐI BẢO MẬT SINH TRẮC HỌC FACEID
+          _buildSectionHeader('BẢO MẬT & SINH TRẮC HỌC'),
+          const SizedBox(height: 10),
           Container(
-            padding: const EdgeInsets.all(18),
+            padding: const EdgeInsets.all(20),
             decoration: BoxDecoration(
               color: Colors.white,
-              borderRadius: BorderRadius.circular(16),
+              borderRadius: BorderRadius.circular(18),
               border: Border.all(
-                color: isFaceEnabled ? Colors.green.withValues(alpha: 0.3) : Colors.grey[200]!,
+                color: isFaceEnabled ? const Color(0xFF86EFAC) : const Color(0xFFE2E8F0),
                 width: isFaceEnabled ? 1.5 : 1,
               ),
               boxShadow: [
                 BoxShadow(
                   color: isFaceEnabled
-                      ? Colors.green.withValues(alpha: 0.05)
+                      ? const Color(0xFF10B981).withValues(alpha: 0.06)
                       : Colors.black.withValues(alpha: 0.02),
                   blurRadius: 10,
                   offset: const Offset(0, 4),
@@ -911,19 +1209,20 @@ class _LearnerProfileTabState extends State<_LearnerProfileTab> {
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 Row(
+                  crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
                     Container(
-                      padding: const EdgeInsets.all(10),
+                      padding: const EdgeInsets.all(12),
                       decoration: BoxDecoration(
                         color: isFaceEnabled
-                            ? Colors.green.withValues(alpha: 0.12)
-                            : Colors.grey.withValues(alpha: 0.12),
-                        borderRadius: BorderRadius.circular(12),
+                            ? const Color(0xFFECFDF5)
+                            : const Color(0xFFF1F5F9),
+                        borderRadius: BorderRadius.circular(14),
                       ),
                       child: Icon(
                         Icons.face_retouching_natural_rounded,
-                        color: isFaceEnabled ? Colors.green[700] : Colors.grey[700],
-                        size: 26,
+                        color: isFaceEnabled ? const Color(0xFF059669) : Colors.grey[600],
+                        size: 28,
                       ),
                     ),
                     const SizedBox(width: 14),
@@ -939,14 +1238,15 @@ class _LearnerProfileTabState extends State<_LearnerProfileTab> {
                               color: AppColors.navy,
                             ),
                           ),
-                          const SizedBox(height: 2),
+                          const SizedBox(height: 4),
                           Text(
                             isFaceEnabled
                                 ? 'Đã kích hoạt đăng nhập sinh trắc học'
-                                : 'Chưa kích hoạt đăng nhập sinh trắc học',
+                                : 'Chưa kích hoạt nhận diện khuôn mặt',
                             style: TextStyle(
                               fontSize: 12,
-                              color: isFaceEnabled ? Colors.green[700] : Colors.grey[600],
+                              color: isFaceEnabled ? const Color(0xFF059669) : Colors.grey[500],
+                              fontWeight: isFaceEnabled ? FontWeight.w600 : FontWeight.normal,
                             ),
                           ),
                         ],
@@ -956,27 +1256,25 @@ class _LearnerProfileTabState extends State<_LearnerProfileTab> {
                     Container(
                       padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
                       decoration: BoxDecoration(
-                        color: isFaceEnabled
-                            ? Colors.green.withValues(alpha: 0.15)
-                            : Colors.grey.withValues(alpha: 0.15),
-                        borderRadius: BorderRadius.circular(20),
+                        color: isFaceEnabled ? const Color(0xFFD1FAE5) : const Color(0xFFF1F5F9),
+                        borderRadius: BorderRadius.circular(12),
                       ),
                       child: Text(
-                        isFaceEnabled ? 'ĐÃ BẬT' : 'CHƯA BẬT',
+                        isFaceEnabled ? '● ĐÃ BẬT' : '○ CHƯA BẬT',
                         style: TextStyle(
                           fontSize: 11,
                           fontWeight: FontWeight.bold,
-                          color: isFaceEnabled ? Colors.green[800] : Colors.grey[700],
+                          color: isFaceEnabled ? const Color(0xFF047857) : Colors.grey[600],
                         ),
                       ),
                     ),
                   ],
                 ),
                 const SizedBox(height: 16),
-                const Divider(height: 1),
+                const Divider(height: 1, color: Color(0xFFF1F5F9)),
                 const SizedBox(height: 16),
 
-                // Nút hành động: Đăng ký hoặc Hủy
+                // Nút hành động FaceID
                 if (!isFaceEnabled) ...[
                   SizedBox(
                     width: double.infinity,
@@ -990,14 +1288,15 @@ class _LearnerProfileTabState extends State<_LearnerProfileTab> {
                             )
                           : const Icon(Icons.add_a_photo_rounded, size: 20),
                       label: Text(
-                        _isActionLoading ? 'ĐANG XỬ LÝ...' : 'ĐĂNG KÝ KHUÔN MẶT (FACEID)',
-                        style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 13),
+                        _isActionLoading ? 'ĐANG XỬ LÝ...' : 'ĐĂNG KÝ FACEID NGAY',
+                        style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 13, letterSpacing: 0.5),
                       ),
                       style: ElevatedButton.styleFrom(
                         backgroundColor: AppColors.primary,
                         foregroundColor: Colors.white,
-                        padding: const EdgeInsets.symmetric(vertical: 12),
+                        padding: const EdgeInsets.symmetric(vertical: 14),
                         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                        elevation: 0,
                       ),
                     ),
                   ),
@@ -1011,36 +1310,37 @@ class _LearnerProfileTabState extends State<_LearnerProfileTab> {
                           label: const Text('CẬP NHẬT LẠI', style: TextStyle(fontSize: 12, fontWeight: FontWeight.bold)),
                           style: OutlinedButton.styleFrom(
                             foregroundColor: AppColors.navy,
-                            side: BorderSide(color: Colors.grey[300]!),
-                            padding: const EdgeInsets.symmetric(vertical: 12),
+                            side: const BorderSide(color: Color(0xFFCBD5E1)),
+                            padding: const EdgeInsets.symmetric(vertical: 13),
                             shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
                           ),
                         ),
                       ),
                       const SizedBox(width: 12),
                       Expanded(
-                        child: OutlinedButton.icon(
+                        child: ElevatedButton.icon(
                           onPressed: _isActionLoading ? null : _deleteFaceId,
                           icon: _isActionLoading
                               ? const SizedBox(
                                   width: 16,
                                   height: 16,
-                                  child: CircularProgressIndicator(strokeWidth: 2, color: Colors.redAccent),
+                                  child: CircularProgressIndicator(strokeWidth: 2, color: Color(0xFFDC2626)),
                                 )
-                              : const Icon(Icons.delete_outline_rounded, color: Colors.redAccent, size: 18),
+                              : const Icon(Icons.delete_outline_rounded, color: Color(0xFFDC2626), size: 18),
                           label: const Text(
                             'HỦY FACEID',
                             style: TextStyle(
                               fontSize: 12,
                               fontWeight: FontWeight.bold,
-                              color: Colors.redAccent,
+                              color: Color(0xFFDC2626),
                             ),
                           ),
-                          style: OutlinedButton.styleFrom(
-                            foregroundColor: Colors.redAccent,
-                            side: BorderSide(color: Colors.redAccent.withValues(alpha: 0.5)),
-                            backgroundColor: Colors.red.withValues(alpha: 0.04),
-                            padding: const EdgeInsets.symmetric(vertical: 12),
+                          style: ElevatedButton.styleFrom(
+                            backgroundColor: const Color(0xFFFEF2F2),
+                            foregroundColor: const Color(0xFFDC2626),
+                            elevation: 0,
+                            side: const BorderSide(color: Color(0xFFFECACA)),
+                            padding: const EdgeInsets.symmetric(vertical: 13),
                             shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
                           ),
                         ),
@@ -1051,28 +1351,227 @@ class _LearnerProfileTabState extends State<_LearnerProfileTab> {
               ],
             ),
           ),
+          const SizedBox(height: 24),
+
+          // 4. THÔNG TIN TÀI KHOẢN
+          _buildSectionHeader('THÔNG TIN TÀI KHOẢN'),
+          const SizedBox(height: 10),
+          Container(
+            decoration: BoxDecoration(
+              color: Colors.white,
+              borderRadius: BorderRadius.circular(18),
+              border: Border.all(color: const Color(0xFFE2E8F0)),
+            ),
+            child: Column(
+              children: [
+                _buildInfoTile(
+                  icon: Icons.badge_outlined,
+                  title: 'Mã học viên (User ID)',
+                  value: '#${user?.id ?? "N/A"}',
+                ),
+                const Divider(height: 1, indent: 56, endIndent: 20, color: Color(0xFFF1F5F9)),
+                _buildInfoTile(
+                  icon: Icons.alternate_email_rounded,
+                  title: 'Tên đăng nhập',
+                  value: user?.username ?? 'N/A',
+                ),
+                const Divider(height: 1, indent: 56, endIndent: 20, color: Color(0xFFF1F5F9)),
+                _buildInfoTile(
+                  icon: Icons.verified_user_outlined,
+                  title: 'Trạng thái tài khoản',
+                  value: 'Đang hoạt động',
+                  valueColor: const Color(0xFF10B981),
+                ),
+              ],
+            ),
+          ),
+          const SizedBox(height: 24),
+
+          // 5. CÀI ĐẶT & THÔNG TIN ỨNG DỤNG
+          _buildSectionHeader('ỨNG DỤNG & THIẾT LẬP'),
+          const SizedBox(height: 10),
+          Container(
+            decoration: BoxDecoration(
+              color: Colors.white,
+              borderRadius: BorderRadius.circular(18),
+              border: Border.all(color: const Color(0xFFE2E8F0)),
+            ),
+            child: Column(
+              children: [
+                ListTile(
+                  leading: Container(
+                    padding: const EdgeInsets.all(8),
+                    decoration: BoxDecoration(
+                      color: const Color(0xFFE0F2FE),
+                      borderRadius: BorderRadius.circular(10),
+                    ),
+                    child: const Icon(Icons.history_edu_rounded, color: Color(0xFF0284C7), size: 20),
+                  ),
+                  title: const Text('Lịch sử chấm điểm AI Qwen', style: TextStyle(fontWeight: FontWeight.w600, fontSize: 14)),
+                  subtitle: const Text('Xem lại bài viết Writing & câu đặt Từ vựng', style: TextStyle(fontSize: 12, color: Colors.grey)),
+                  trailing: const Icon(Icons.chevron_right_rounded, color: Colors.grey),
+                  onTap: () {
+                    Navigator.push(
+                      context,
+                      MaterialPageRoute(builder: (_) => const AiGradingHistoryScreen()),
+                    );
+                  },
+                ),
+                const Divider(height: 1, indent: 56, endIndent: 20, color: Color(0xFFF1F5F9)),
+                ListTile(
+                  leading: Container(
+                    padding: const EdgeInsets.all(8),
+                    decoration: BoxDecoration(
+                      color: const Color(0xFFF1F5F9),
+                      borderRadius: BorderRadius.circular(10),
+                    ),
+                    child: const Icon(Icons.language_rounded, color: AppColors.navy, size: 20),
+                  ),
+                  title: const Text('Ngôn ngữ', style: TextStyle(fontWeight: FontWeight.w600, fontSize: 14)),
+                  trailing: const Text('Tiếng Việt (Mặc định)', style: TextStyle(color: Colors.grey, fontSize: 13)),
+                ),
+                const Divider(height: 1, indent: 56, endIndent: 20, color: Color(0xFFF1F5F9)),
+                ListTile(
+                  leading: Container(
+                    padding: const EdgeInsets.all(8),
+                    decoration: BoxDecoration(
+                      color: const Color(0xFFF1F5F9),
+                      borderRadius: BorderRadius.circular(10),
+                    ),
+                    child: const Icon(Icons.info_outline_rounded, color: AppColors.navy, size: 20),
+                  ),
+                  title: const Text('Thông tin phiên bản', style: TextStyle(fontWeight: FontWeight.w600, fontSize: 14)),
+                  trailing: const Icon(Icons.chevron_right_rounded, color: Colors.grey),
+                  onTap: _showAppInfoDialog,
+                ),
+              ],
+            ),
+          ),
           const SizedBox(height: 28),
 
-          // Nút Đăng xuất
+          // 6. NÚT ĐĂNG XUẤT
           SizedBox(
             width: double.infinity,
             child: ElevatedButton.icon(
               onPressed: () {
                 context.read<AuthProvider>().logout();
               },
-              icon: const Icon(Icons.logout_rounded),
-              label: const Text('ĐĂNG XUẤT TÀI KHOẢN'),
+              icon: const Icon(Icons.logout_rounded, size: 18),
+              label: const Text(
+                'ĐĂNG XUẤT TÀI KHOẢN',
+                style: TextStyle(fontWeight: FontWeight.bold, letterSpacing: 0.5, fontSize: 14),
+              ),
               style: ElevatedButton.styleFrom(
-                backgroundColor: Colors.red[50],
-                foregroundColor: Colors.redAccent,
+                backgroundColor: const Color(0xFFFFF1F2),
+                foregroundColor: const Color(0xFFE11D48),
                 elevation: 0,
-                side: const BorderSide(color: Colors.redAccent),
-                padding: const EdgeInsets.symmetric(vertical: 14),
+                side: const BorderSide(color: Color(0xFFFECDD3), width: 1.2),
+                padding: const EdgeInsets.symmetric(vertical: 15),
                 shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
               ),
             ),
           ),
+          const SizedBox(height: 40),
         ],
+      ),
+    );
+  }
+
+  Widget _buildSectionHeader(String title) {
+    return Padding(
+      padding: const EdgeInsets.only(left: 4),
+      child: Text(
+        title,
+        style: TextStyle(
+          fontSize: 12,
+          fontWeight: FontWeight.w700,
+          color: Colors.grey[500],
+          letterSpacing: 0.8,
+        ),
+      ),
+    );
+  }
+
+  Widget _buildStatItem({
+    required IconData icon,
+    required Color iconColor,
+    required Color iconBg,
+    required String title,
+    required String value,
+  }) {
+    return Container(
+      padding: const EdgeInsets.symmetric(vertical: 16, horizontal: 10),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(16),
+        border: Border.all(color: const Color(0xFFE2E8F0)),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withValues(alpha: 0.02),
+            blurRadius: 8,
+            offset: const Offset(0, 3),
+          ),
+        ],
+      ),
+      child: Column(
+        children: [
+          Container(
+            padding: const EdgeInsets.all(8),
+            decoration: BoxDecoration(
+              color: iconBg,
+              shape: BoxShape.circle,
+            ),
+            child: Icon(icon, color: iconColor, size: 20),
+          ),
+          const SizedBox(height: 10),
+          Text(
+            value,
+            style: const TextStyle(
+              fontSize: 15,
+              fontWeight: FontWeight.w800,
+              color: AppColors.navy,
+            ),
+          ),
+          const SizedBox(height: 2),
+          Text(
+            title,
+            style: TextStyle(
+              fontSize: 11,
+              color: Colors.grey[500],
+              fontWeight: FontWeight.w500,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildInfoTile({
+    required IconData icon,
+    required String title,
+    required String value,
+    Color? valueColor,
+  }) {
+    return ListTile(
+      leading: Container(
+        padding: const EdgeInsets.all(8),
+        decoration: BoxDecoration(
+          color: const Color(0xFFF1F5F9),
+          borderRadius: BorderRadius.circular(10),
+        ),
+        child: Icon(icon, color: AppColors.navy, size: 20),
+      ),
+      title: Text(
+        title,
+        style: const TextStyle(fontSize: 14, fontWeight: FontWeight.w600, color: AppColors.navy),
+      ),
+      trailing: Text(
+        value,
+        style: TextStyle(
+          fontSize: 13,
+          fontWeight: FontWeight.w700,
+          color: valueColor ?? AppColors.navy,
+        ),
       ),
     );
   }

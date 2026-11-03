@@ -3,7 +3,28 @@ import 'dart:typed_data';
 import 'package:flutter/material.dart';
 import 'image_utils.dart';
 
+/// Kết quả phát hiện thô từ YOLOv8 trước khi ghép với nhãn
+class YoloDetection {
+  final int classId;
+  final double score;
+  final Rect rect;
+
+  const YoloDetection({
+    required this.classId,
+    required this.score,
+    required this.rect,
+  });
+
+  @override
+  String toString() => 'YoloDetection(class: $classId, score: ${(score * 100).toStringAsFixed(1)}%, rect: $rect)';
+}
+
 /// Parser chuyên dụng cho YOLOv8n TFLite output.
+///
+/// Tối ưu hóa hiệu năng cực đại:
+/// 1. Xử lý trực tiếp trên mảng Float32List phẳng (Zero Intermediate Allocation)
+/// 2. Lọc sớm (Early-Exit) khi maxClassScore < confidenceThreshold
+/// 3. Sử dụng strongly-typed YoloDetection struct thay vì Map<String, dynamic>
 ///
 /// YOLOv8n TFLite output shape: [1, 84, 8400] (hoặc [1, 8400, 84])
 ///   - 84 = 4 tọa độ (xc, yc, w, h) + 80 class scores (COCO)
@@ -17,7 +38,7 @@ class YoloParser {
   /// [shape]: Output tensor shape (ví dụ [1, 84, 8400])
   /// [confidenceThreshold]: Ngưỡng lọc ban đầu (0.25)
   /// [inputWidth]/[inputHeight]: Kích thước input YOLO (640)
-  static List<Map<String, dynamic>> parse(
+  static List<YoloDetection> parse(
     Float32List rawOutput,
     List<int> shape,
     double confidenceThreshold,
@@ -50,87 +71,129 @@ class YoloParser {
       return [];
     }
 
-    final List<Map<String, dynamic>> candidates = [];
+    final List<YoloDetection> candidates = [];
     double globalMaxScore = 0.0;
 
-    for (int a = 0; a < numAnchors; a++) {
-      // ── Tìm class có score cao nhất cho anchor a ──
-      double maxClassScore = 0.0;
-      int bestClassId = -1;
+    final bool hasLetterbox = letterbox != null && letterbox.scaledWidth > 0 && letterbox.scaledHeight > 0;
+    final double lbPadX = hasLetterbox ? letterbox.padX.toDouble() : 0.0;
+    final double lbPadY = hasLetterbox ? letterbox.padY.toDouble() : 0.0;
+    final double lbScaledW = hasLetterbox ? letterbox.scaledWidth.toDouble() : inputWidth.toDouble();
+    final double lbScaledH = hasLetterbox ? letterbox.scaledHeight.toDouble() : inputHeight.toDouble();
 
-      for (int c = 0; c < numClasses; c++) {
-        final int fieldIndex = c + 4; // field 0..3 = bbox, 4..83 = classes
-        final int dataIndex = needTranspose
-            ? (fieldIndex * numAnchors + a) // [1, 84, 8400]
-            : (a * numFields + fieldIndex); // [1, 8400, 84]
+    if (needTranspose) {
+      // Shape [1, 84, 8400]: Mỗi class cách nhau đúng numAnchors phần tử
+      for (int a = 0; a < numAnchors; a++) {
+        double maxClassScore = 0.0;
+        int bestClassId = -1;
+        int dataIndex = 4 * numAnchors + a;
 
-        final double score = rawOutput[dataIndex];
-        if (score > maxClassScore) {
-          maxClassScore = score;
-          bestClassId = c;
+        for (int c = 0; c < numClasses; c++) {
+          final double score = rawOutput[dataIndex];
+          if (score > maxClassScore) {
+            maxClassScore = score;
+            bestClassId = c;
+          }
+          dataIndex += numAnchors; // Bước nhảy tuyến tính, không nhân phép toán
         }
+
+        if (maxClassScore > globalMaxScore) {
+          globalMaxScore = maxClassScore;
+        }
+
+        // Lọc sớm (Early Exit)
+        if (maxClassScore < confidenceThreshold) continue;
+
+        final double xc = rawOutput[a];
+        final double yc = rawOutput[numAnchors + a];
+        final double bw = rawOutput[2 * numAnchors + a];
+        final double bh = rawOutput[3 * numAnchors + a];
+
+        final bool isAlreadyNormalized = (bw <= 1.0 && bh <= 1.0 && xc <= 1.0 && yc <= 1.0);
+        final double pixelXc = isAlreadyNormalized ? xc * inputWidth : xc;
+        final double pixelYc = isAlreadyNormalized ? yc * inputHeight : yc;
+        final double pixelBw = isAlreadyNormalized ? bw * inputWidth : bw;
+        final double pixelBh = isAlreadyNormalized ? bh * inputHeight : bh;
+
+        final double halfW = pixelBw * 0.5;
+        final double halfH = pixelBh * 0.5;
+
+        final double left = (pixelXc - halfW - lbPadX) / lbScaledW;
+        final double top = (pixelYc - halfH - lbPadY) / lbScaledH;
+        final double right = (pixelXc + halfW - lbPadX) / lbScaledW;
+        final double bottom = (pixelYc + halfH - lbPadY) / lbScaledH;
+
+        final rect = Rect.fromLTRB(
+          left.clamp(0.0, 1.0),
+          top.clamp(0.0, 1.0),
+          right.clamp(0.0, 1.0),
+          bottom.clamp(0.0, 1.0),
+        );
+
+        if (rect.width < 0.02 || rect.height < 0.02) continue;
+
+        candidates.add(YoloDetection(
+          classId: bestClassId,
+          score: maxClassScore,
+          rect: rect,
+        ));
       }
+    } else {
+      // Shape [1, 8400, 84]: 80 class scores liên tiếp nhau trong bộ nhớ
+      for (int a = 0; a < numAnchors; a++) {
+        double maxClassScore = 0.0;
+        int bestClassId = -1;
+        int dataIndex = a * numFields + 4;
 
-      if (maxClassScore > globalMaxScore) {
-        globalMaxScore = maxClassScore;
+        for (int c = 0; c < numClasses; c++) {
+          final double score = rawOutput[dataIndex++];
+          if (score > maxClassScore) {
+            maxClassScore = score;
+            bestClassId = c;
+          }
+        }
+
+        if (maxClassScore > globalMaxScore) {
+          globalMaxScore = maxClassScore;
+        }
+
+        // Lọc sớm (Early Exit)
+        if (maxClassScore < confidenceThreshold) continue;
+
+        final int base = a * numFields;
+        final double xc = rawOutput[base];
+        final double yc = rawOutput[base + 1];
+        final double bw = rawOutput[base + 2];
+        final double bh = rawOutput[base + 3];
+
+        final bool isAlreadyNormalized = (bw <= 1.0 && bh <= 1.0 && xc <= 1.0 && yc <= 1.0);
+        final double pixelXc = isAlreadyNormalized ? xc * inputWidth : xc;
+        final double pixelYc = isAlreadyNormalized ? yc * inputHeight : yc;
+        final double pixelBw = isAlreadyNormalized ? bw * inputWidth : bw;
+        final double pixelBh = isAlreadyNormalized ? bh * inputHeight : bh;
+
+        final double halfW = pixelBw * 0.5;
+        final double halfH = pixelBh * 0.5;
+
+        final double left = (pixelXc - halfW - lbPadX) / lbScaledW;
+        final double top = (pixelYc - halfH - lbPadY) / lbScaledH;
+        final double right = (pixelXc + halfW - lbPadX) / lbScaledW;
+        final double bottom = (pixelYc + halfH - lbPadY) / lbScaledH;
+
+        final rect = Rect.fromLTRB(
+          left.clamp(0.0, 1.0),
+          top.clamp(0.0, 1.0),
+          right.clamp(0.0, 1.0),
+          bottom.clamp(0.0, 1.0),
+        );
+
+        if (rect.width < 0.02 || rect.height < 0.02) continue;
+
+        candidates.add(YoloDetection(
+          classId: bestClassId,
+          score: maxClassScore,
+          rect: rect,
+        ));
       }
-
-      if (maxClassScore < confidenceThreshold) continue;
-
-      // ── Đọc bounding box (xc, yc, bw, bh) ──
-      final double xc, yc, bw, bh;
-      if (needTranspose) {
-        xc = rawOutput[0 * numAnchors + a];
-        yc = rawOutput[1 * numAnchors + a];
-        bw = rawOutput[2 * numAnchors + a];
-        bh = rawOutput[3 * numAnchors + a];
-      } else {
-        xc = rawOutput[a * numFields + 0];
-        yc = rawOutput[a * numFields + 1];
-        bw = rawOutput[a * numFields + 2];
-        bh = rawOutput[a * numFields + 3];
-      }
-
-      final bool isAlreadyNormalized =
-          (bw <= 1.0 && bh <= 1.0 && xc <= 1.0 && yc <= 1.0);
-      final double pixelXc = isAlreadyNormalized ? xc * inputWidth : xc;
-      final double pixelYc = isAlreadyNormalized ? yc * inputHeight : yc;
-      final double pixelBw = isAlreadyNormalized ? bw * inputWidth : bw;
-      final double pixelBh = isAlreadyNormalized ? bh * inputHeight : bh;
-
-      final double left;
-      final double top;
-      final double right;
-      final double bottom;
-
-      if (letterbox != null && letterbox.scaledWidth > 0 && letterbox.scaledHeight > 0) {
-        // Un-letterbox: Trừ padding và chuẩn hóa theo kích thước camera thực
-        left = (pixelXc - pixelBw / 2 - letterbox.padX) / letterbox.scaledWidth;
-        top = (pixelYc - pixelBh / 2 - letterbox.padY) / letterbox.scaledHeight;
-        right = (pixelXc + pixelBw / 2 - letterbox.padX) / letterbox.scaledWidth;
-        bottom = (pixelYc + pixelBh / 2 - letterbox.padY) / letterbox.scaledHeight;
-      } else {
-        left = (pixelXc - pixelBw / 2) / inputWidth;
-        top = (pixelYc - pixelBh / 2) / inputHeight;
-        right = (pixelXc + pixelBw / 2) / inputWidth;
-        bottom = (pixelYc + pixelBh / 2) / inputHeight;
-      }
-
-      final rect = Rect.fromLTRB(
-        left.clamp(0.0, 1.0),
-        top.clamp(0.0, 1.0),
-        right.clamp(0.0, 1.0),
-        bottom.clamp(0.0, 1.0),
-      );
-
-      // Bỏ qua box quá nhỏ hoặc không hợp lệ
-      if (rect.width < 0.02 || rect.height < 0.02) continue;
-
-      candidates.add({
-        'classId': bestClassId,
-        'score': maxClassScore,
-        'rect': rect,
-      });
     }
 
     lastGlobalMaxScore = globalMaxScore;
@@ -139,23 +202,23 @@ class YoloParser {
 
   /// Non-Maximum Suppression để loại bỏ các box trùng lắp
   /// Hỗ trợ cả intra-class (cùng class) và cross-class suppression (các box khác class nhưng đè lên nhau)
-  static List<Map<String, dynamic>> _nonMaximumSuppression(
-    List<Map<String, dynamic>> boxes,
+  static List<YoloDetection> _nonMaximumSuppression(
+    List<YoloDetection> boxes,
     double iouThreshold, {
     double crossClassIouThreshold = 0.50,
   }) {
     if (boxes.isEmpty) return [];
 
     // Sắp xếp giảm dần theo điểm tin cậy (box có điểm cao nhất được ưu tiên giữ lại)
-    boxes.sort((a, b) => (b['score'] as double).compareTo(a['score'] as double));
+    boxes.sort((a, b) => b.score.compareTo(a.score));
 
-    final List<Map<String, dynamic>> selected = [];
+    final List<YoloDetection> selected = [];
 
     for (final box in boxes) {
       bool shouldSelect = true;
       for (final sBox in selected) {
-        final double iou = _iou(box['rect'] as Rect, sBox['rect'] as Rect);
-        final bool sameClass = (box['classId'] as int) == (sBox['classId'] as int);
+        final double iou = _iou(box.rect, sBox.rect);
+        final bool sameClass = box.classId == sBox.classId;
 
         // 1. Cùng class: triệt tiêu nếu IoU > iouThreshold
         if (sameClass && iou > iouThreshold) {

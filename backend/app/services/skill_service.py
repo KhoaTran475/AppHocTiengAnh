@@ -1,4 +1,6 @@
+import uuid
 import logging
+from app.services.notebook_service import resolve_user_uuid
 from datetime import datetime
 from typing import List, Optional, Dict, Any
 from sqlalchemy import func
@@ -546,6 +548,16 @@ SAMPLE_SKILL_LESSONS = [
         "pass_score_required": 6,
         "content_json": {
             "taskType": "Task 1",
+            "chart_data": {
+                "type": "bar",
+                "title": "Internet Access in Households (2015 - 2025)",
+                "unit": "%",
+                "categories": ["2015", "2018", "2020", "2025"],
+                "series": [
+                    {"name": "Đô thị (Urban)", "color": "#1E3A8A", "values": [65, 75, 82, 92]},
+                    {"name": "Nông thôn (Rural)", "color": "#D97706", "values": [30, 42, 55, 78]}
+                ]
+            },
             "prompt": "The chart illustrates the percentage of households with internet access across urban and rural areas from 2015 to 2025. Summarise the information by selecting and reporting the main features, and make comparisons where relevant. Write at least 120 words.",
             "minWordCount": 120,
             "suggestedTimeMinutes": 20,
@@ -577,6 +589,17 @@ SAMPLE_SKILL_LESSONS = [
         "pass_score_required": 7,
         "content_json": {
             "taskType": "Task 1",
+            "chart_data": {
+                "type": "line",
+                "title": "Renewable Energy Consumption Across Three Continents",
+                "unit": "TWh",
+                "categories": ["2010", "2014", "2018", "2024"],
+                "series": [
+                    {"name": "Châu Âu (Europe)", "color": "#2563EB", "values": [450, 480, 520, 590]},
+                    {"name": "Bắc Mỹ (North America)", "color": "#059669", "values": [380, 410, 460, 500]},
+                    {"name": "Châu Á (Asia)", "color": "#DC2626", "values": [220, 360, 610, 950]}
+                ]
+            },
             "prompt": "The line graph shows changes in the consumption of renewable energy (in terawatt-hours) across Europe, North America, and Asia between 2010 and 2024. Summarise the main trends and make comparisons. Write at least 150 words.",
             "minWordCount": 150,
             "suggestedTimeMinutes": 20,
@@ -597,6 +620,7 @@ SAMPLE_SKILL_LESSONS = [
             ],
         },
     },
+
     {
         "id": "w3",
         "skill_type": "writing",
@@ -1036,6 +1060,9 @@ def update_skill_lesson(db: Session, lesson_id: str, req: SkillLessonUpdateReque
             lesson.pass_score_required = req.pass_condition["min_correct"]
     if req.content_json is not None:
         lesson.content_json = req.content_json
+        # Lưu ý 3: Dọn dẹp cache AiExplanation khi cập nhật nội dung bài thi
+        from app.services.ai_grading_service import clear_lesson_explanation_cache
+        clear_lesson_explanation_cache(db, lesson_id)
 
     db.commit()
     db.refresh(lesson)
@@ -1043,10 +1070,14 @@ def update_skill_lesson(db: Session, lesson_id: str, req: SkillLessonUpdateReque
 
 
 def delete_skill_lesson(db: Session, lesson_id: str) -> bool:
-    """Xóa bài học khỏi hệ thống."""
+    """Xóa bài học khỏi hệ thống và dọn dẹp toàn bộ cache giải thích liên quan."""
     lesson = db.query(SkillLesson).filter(SkillLesson.id == lesson_id).first()
     if not lesson:
         return False
+    # Lưu ý 3: Dọn dẹp cache AiExplanation khi xóa bài thi
+    from app.services.ai_grading_service import clear_lesson_explanation_cache
+    clear_lesson_explanation_cache(db, lesson_id)
+
     db.delete(lesson)
     db.commit()
     return True
@@ -1454,13 +1485,13 @@ def grade_speaking(lesson: SkillLesson, ratings: Dict[str, int]) -> Dict[str, An
 # 4. LƯU LỊCH SỬ THI VÀ TIẾN ĐỘ VƯỢT ẢI (CHO CẢ 4 KỸ NĂNG)
 # ─────────────────────────────────────────────────────────────
 
-def submit_lesson(
+async def submit_lesson(
     db: Session,
     user: User,
     req: SkillSubmissionRequest,
     sync_supabase: bool = True,
 ) -> SkillSubmissionResponse:
-    """Xử lý nộp bài, chấm điểm, lưu lịch sử và cập nhật tiến độ vượt ải cho cả 4 kỹ năng."""
+    """Xử lý nộp bài, chấm điểm (hỗ trợ AI Qwen 2.5 7B cho Writing), lưu lịch sử và cập nhật tiến độ vượt ải cho cả 4 kỹ năng."""
     lesson = get_lesson_by_id(db, req.lesson_id)
     if not lesson:
         raise ValueError(f"Không tìm thấy bài học có ID '{req.lesson_id}'")
@@ -1471,15 +1502,24 @@ def submit_lesson(
     elif req.skill_type == "listening":
         result = grade_listening(lesson, req.answers or {})
     elif req.skill_type == "writing":
-        result = grade_writing(lesson, req.essay_text or "")
+        from app.services.ai_grading_service import grade_writing_with_qwen
+        result = await grade_writing_with_qwen(lesson, req.essay_text or "")
     elif req.skill_type == "speaking":
         result = grade_speaking(lesson, req.ratings or {})
     else:
         raise ValueError(f"Kỹ năng '{req.skill_type}' không được hỗ trợ")
 
-    # 2. Lưu vào bảng practice_history cục bộ
+    # 2. Lưu vào bảng practice_history cục bộ (PracticeHistory yêu cầu user_id kiểu UUID)
+    raw_uuid = resolve_user_uuid(db, user)
+    try:
+        user_uuid = uuid.UUID(str(raw_uuid))
+    except (ValueError, TypeError):
+        user_uuid = uuid.uuid5(uuid.NAMESPACE_DNS, f"user_{user.id}_{user.username}")
+        user.supabase_uuid = str(user_uuid)
+        db.commit()
+
     history_entry = PracticeHistory(
-        user_id=user.id,
+        user_id=user_uuid,
         skill_type=req.skill_type,
         lesson_id=lesson.id,
         lesson_title=lesson.title,
@@ -1488,6 +1528,81 @@ def submit_lesson(
         band_score=result["band_score"],
     )
     db.add(history_entry)
+    db.commit()
+    db.refresh(history_entry)
+
+    # 2.1 Lưu chi tiết chấm điểm WritingFeedback vào Supabase PostgreSQL
+    writing_fb_dict = result.get("writing_feedback")
+    wf_entry_id = None
+    if req.skill_type == "writing" and writing_fb_dict:
+        try:
+            from app.models.skill import WritingFeedback
+            wf_entry = WritingFeedback(
+                practice_history_id=history_entry.id,
+                user_id=user_uuid,
+                lesson_id=lesson.id,
+                overall_band=result["band_score"],
+                task_response_band=writing_fb_dict.get("task_response_band"),
+                task_response_comment=writing_fb_dict.get("task_response_comment"),
+                coherence_band=writing_fb_dict.get("coherence_band"),
+                coherence_comment=writing_fb_dict.get("coherence_comment"),
+                lexical_band=writing_fb_dict.get("lexical_band"),
+                lexical_comment=writing_fb_dict.get("lexical_comment"),
+                grammar_band=writing_fb_dict.get("grammar_band"),
+                grammar_comment=writing_fb_dict.get("grammar_comment"),
+                errors_json=writing_fb_dict.get("errors", []),
+                strengths=writing_fb_dict.get("strengths", []),
+                improvements=writing_fb_dict.get("improvements", []),
+                improved_paragraph=writing_fb_dict.get("improved_paragraph", ""),
+                ai_used=result.get("ai_used", True),
+            )
+            db.add(wf_entry)
+            db.commit()
+            wf_entry_id = wf_entry.id
+            logger.info(f"💾 Đã lưu chi tiết WritingFeedback vào Supabase cho bài {lesson.id}")
+        except Exception as wf_err:
+            db.rollback()
+            logger.warning(f"Lỗi khi lưu WritingFeedback vào Supabase: {wf_err}")
+
+    # 2.2 Ghi log tập trung vào bảng ai_grading_logs
+    if req.skill_type == "writing":
+        try:
+            from app.services.ai_grading_log_service import log_ai_grading
+            ai_meta = result.get("_meta", {})
+            band_val = result.get("band_score")
+            numeric_score = None
+            try:
+                numeric_score = float(band_val) if band_val else None
+            except Exception:
+                pass
+
+            log_ai_grading(
+                db=db,
+                feature="writing_grading",
+                skill_type="writing",
+                user_id=user_uuid,
+                username=user.username,
+                lesson_id=lesson.id,
+                lesson_title=lesson.title,
+                input_text=req.essay_text,
+                input_word_count=result.get("score"),
+                band_score=band_val,
+                score_numeric=numeric_score,
+                is_correct=result.get("passed"),
+                result_json=result.get("writing_feedback"),
+                model_name=ai_meta.get("model", "qwen2.5:7b"),
+                ai_used=result.get("ai_used", True),
+                from_cache=False,
+                status="success" if result.get("ai_used") else "fallback",
+                error_message=ai_meta.get("error"),
+                latency_ms=ai_meta.get("latency_ms", 0),
+                prompt_tokens=ai_meta.get("prompt_tokens"),
+                completion_tokens=ai_meta.get("completion_tokens"),
+                practice_history_id=history_entry.id,
+                writing_feedback_id=wf_entry_id,
+            )
+        except Exception as log_err:
+            logger.warning(f"Lỗi khi ghi AiGradingLog cho bài viết: {log_err}")
 
     # 3. Cập nhật tiến độ Vượt ải (Gamified Stages) cho KỸ NĂNG BẤT KỲ nếu bài có stage_number
     if lesson.stage_number:
@@ -1586,18 +1701,39 @@ def submit_lesson(
         band_score=result["band_score"],
         passed=result["passed"],
         stars=result["stars"],
-        feedback=result["feedback"],
+        feedback=result.get("feedback"),
         question_results=result.get("question_results"),
+        ai_used=result.get("ai_used", False),
+        writing_feedback=result.get("writing_feedback"),
     )
 
 
 def get_user_practice_history(
     db: Session,
-    user_id: int,
+    user_id: Any,
     skill_type: Optional[str] = None,
 ) -> List[PracticeHistory]:
     """Lấy lịch sử làm bài thi của học viên."""
-    q = db.query(PracticeHistory).filter(PracticeHistory.user_id == user_id)
+    target_uuid = None
+    if isinstance(user_id, int):
+        u = db.query(User).filter(User.id == user_id).first()
+        if u and u.supabase_uuid:
+            try:
+                target_uuid = uuid.UUID(str(u.supabase_uuid))
+            except Exception:
+                target_uuid = u.supabase_uuid
+    elif isinstance(user_id, uuid.UUID):
+        target_uuid = user_id
+    elif isinstance(user_id, str):
+        try:
+            target_uuid = uuid.UUID(user_id)
+        except Exception:
+            target_uuid = user_id
+
+    if not target_uuid:
+        return []
+
+    q = db.query(PracticeHistory).filter(PracticeHistory.user_id == target_uuid)
     if skill_type:
         q = q.filter(PracticeHistory.skill_type == skill_type.strip().lower())
     return q.order_by(PracticeHistory.created_at.desc()).all()
